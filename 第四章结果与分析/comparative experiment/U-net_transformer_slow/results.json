@@ -1,0 +1,23 @@
+{
+  "rect": {
+    "rmse": 19.916773867849948,
+    "mae": 15.46449335141997,
+    "best_epoch": 35
+  },
+  "irreg": {
+    "rmse": 23.389099148749043,
+    "mae": 16.52267158268593,
+    "best_epoch": 94
+  },
+  "config": {
+    "max_lr": 0.0005,
+    "pct_start": 0.3,
+    "epochs": 150,
+    "weight_decay": 1e-05,
+    "base_ch": 48,
+    "batch_size": 8,
+    "transformer_layers": 4,
+    "transformer_heads": 8
+  },
+  "total_time_min": 232.8
+}

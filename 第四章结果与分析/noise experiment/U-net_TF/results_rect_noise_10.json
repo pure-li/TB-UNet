@@ -1,0 +1,12 @@
+{
+  "method": "U-Net+Transformer",
+  "region": "rect",
+  "noise_sigma": 10,
+  "rmse": 40.53837203979492,
+  "mae": 33.81789779663086,
+  "best_epoch": 19,
+  "train_time": 4434.034244298935,
+  "n_params": 4284961,
+  "status": "completed",
+  "timestamp": "2026-05-12 00:21:20"
+}

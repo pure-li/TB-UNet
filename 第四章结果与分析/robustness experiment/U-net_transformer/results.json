@@ -1,0 +1,44 @@
+{
+  "small": {
+    "rmse": 10.6,
+    "mae": 8.52,
+    "best_epoch": 17,
+    "source": "slow retrained"
+  },
+  "large": {
+    "rmse": 19.92,
+    "mae": 15.46,
+    "best_epoch": 35,
+    "source": "U-net_transformer_slow (1.0deg center, new role as large)"
+  },
+  "config": {
+    "max_lr": 0.0005,
+    "pct_start": 0.3,
+    "epochs": 100,
+    "weight_decay": 1e-05,
+    "base_ch": 48,
+    "batch_size": 8,
+    "large_v2": {
+      "max_lr": 0.0002,
+      "pct_start": 0.5,
+      "epochs": 200,
+      "weight_decay": 0.0001
+    }
+  },
+  "medium": {
+    "rmse": 20.399721986755406,
+    "mae": 14.049696887410937,
+    "best_epoch": 37,
+    "train_time": 4064.6479918956757,
+    "n_train": 337351,
+    "n_test": 12174,
+    "n_params": 4284961,
+    "rect_bounds": [
+      61.2,
+      62.0,
+      34.0,
+      34.8
+    ],
+    "training": "slow_style_dataloader"
+  }
+}

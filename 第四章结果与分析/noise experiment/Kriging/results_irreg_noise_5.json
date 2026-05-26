@@ -1,0 +1,10 @@
+{
+  "method": "Kriging",
+  "region": "irreg",
+  "noise_sigma": 5,
+  "rmse": 53.99934683088967,
+  "mae": 43.053909073011745,
+  "time": 4.462714433670044,
+  "status": "completed",
+  "timestamp": "2026-05-11 19:34:18"
+}

@@ -1,0 +1,87 @@
+{
+  "method": "Kriging",
+  "status": "completed",
+  "total_time_min": 3.4,
+  "results": {
+    "rect_noise_0": {
+      "method": "Kriging",
+      "region": "rect",
+      "noise_sigma": 0,
+      "rmse": 47.345854521719176,
+      "mae": 37.36755259879518,
+      "time": 5.540133714675903,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:32:09"
+    },
+    "rect_noise_2": {
+      "method": "Kriging",
+      "region": "rect",
+      "noise_sigma": 2,
+      "rmse": 47.33158050279414,
+      "mae": 37.366474031834954,
+      "time": 5.815037965774536,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:32:24"
+    },
+    "rect_noise_5": {
+      "method": "Kriging",
+      "region": "rect",
+      "noise_sigma": 5,
+      "rmse": 47.458112869307314,
+      "mae": 37.493146436978535,
+      "time": 5.799172639846802,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:32:39"
+    },
+    "rect_noise_10": {
+      "method": "Kriging",
+      "region": "rect",
+      "noise_sigma": 10,
+      "rmse": 48.25336382201357,
+      "mae": 38.157633139846155,
+      "time": 5.920564651489258,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:32:55"
+    },
+    "irreg_noise_0": {
+      "method": "Kriging",
+      "region": "irreg",
+      "noise_sigma": 0,
+      "rmse": 53.72589680412715,
+      "mae": 42.84663028687409,
+      "time": 4.234036684036255,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:33:52"
+    },
+    "irreg_noise_2": {
+      "method": "Kriging",
+      "region": "irreg",
+      "noise_sigma": 2,
+      "rmse": 53.83827836641116,
+      "mae": 42.93222899060008,
+      "time": 4.797188758850098,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:34:05"
+    },
+    "irreg_noise_5": {
+      "method": "Kriging",
+      "region": "irreg",
+      "noise_sigma": 5,
+      "rmse": 53.99934683088967,
+      "mae": 43.053909073011745,
+      "time": 4.462714433670044,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:34:18"
+    },
+    "irreg_noise_10": {
+      "method": "Kriging",
+      "region": "irreg",
+      "noise_sigma": 10,
+      "rmse": 54.24516061867818,
+      "mae": 43.23761755478993,
+      "time": 4.069459676742554,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:34:30"
+    }
+  }
+}

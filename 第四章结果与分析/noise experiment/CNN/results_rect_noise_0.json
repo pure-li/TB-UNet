@@ -1,0 +1,10 @@
+{
+  "method": "CNN",
+  "region": "rect",
+  "noise_sigma": 0,
+  "rmse": 84.57137955637386,
+  "mae": 75.06619819604418,
+  "time": 0,
+  "status": "completed",
+  "timestamp": "2026-05-11 19:52:13"
+}

@@ -1,0 +1,25 @@
+{
+  "rect": {
+    "rmse": 38.36954311919808,
+    "mae": 26.80081063549392,
+    "best_epoch": 97,
+    "train_time": 2248.0239839553833
+  },
+  "irreg": {
+    "rmse": 29.136175000204375,
+    "mae": 23.57373212548086,
+    "best_epoch": 24,
+    "train_time": 2206.4695460796356
+  },
+  "config": {
+    "model": "U-Net + Skip (with skip, no transformer)",
+    "max_lr": 0.0005,
+    "pct_start": 0.3,
+    "epochs": 100,
+    "weight_decay": 1e-05,
+    "base_ch": 48,
+    "batch_size": 8,
+    "mask_mode": "block",
+    "n_params": 4235809
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "method": "Kriging",
+  "region": "rect",
+  "noise_sigma": 0,
+  "rmse": 47.345854521719176,
+  "mae": 37.36755259879518,
+  "time": 5.540133714675903,
+  "status": "completed",
+  "timestamp": "2026-05-11 19:32:09"
+}

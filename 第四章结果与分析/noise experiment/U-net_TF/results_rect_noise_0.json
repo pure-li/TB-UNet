@@ -1,0 +1,10 @@
+{
+  "method": "TB-UNet",
+  "region": "rect",
+  "noise_sigma": 0,
+  "rmse": 14.897079467773438,
+  "mae": 11.350095748901367,
+  "time": 0,
+  "status": "completed",
+  "timestamp": "2026-05-11 20:05:46"
+}

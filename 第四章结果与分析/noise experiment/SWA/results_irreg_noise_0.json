@@ -1,0 +1,8 @@
+{
+  "method": "U-Net+TF+SWA",
+  "region": "irreg",
+  "noise_sigma": 0,
+  "best_rmse": 17.270510080623122,
+  "swa_rmse": 20.896200310070423,
+  "status": "reused"
+}

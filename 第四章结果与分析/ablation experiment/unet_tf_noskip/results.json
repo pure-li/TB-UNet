@@ -1,0 +1,27 @@
+{
+  "rect": {
+    "rmse": 26.605726421302144,
+    "mae": 21.59308895496688,
+    "best_epoch": 17,
+    "train_time": 3007.398145675659
+  },
+  "irreg": {
+    "rmse": 19.087660963624376,
+    "mae": 13.977646261423788,
+    "best_epoch": 38,
+    "train_time": 3930.88445520401
+  },
+  "config": {
+    "model": "U-Net + Transformer (no skip)",
+    "max_lr": 0.0005,
+    "pct_start": 0.3,
+    "epochs": 200,
+    "weight_decay": 1e-05,
+    "base_ch": 48,
+    "batch_size": 8,
+    "mask_mode": "block",
+    "n_params": 4284961,
+    "transformer_layers": 4,
+    "transformer_heads": 8
+  }
+}

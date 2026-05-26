@@ -1,0 +1,79 @@
+{
+  "method": "CNN",
+  "status": "completed",
+  "total_time_min": 2.4,
+  "results": {
+    "rect_noise_0": {
+      "rmse": 0,
+      "mae": 0,
+      "noise_sigma": 0,
+      "status": "reused"
+    },
+    "rect_noise_2": {
+      "method": "CNN",
+      "region": "rect",
+      "noise_sigma": 2,
+      "rmse": 124.26992476938428,
+      "mae": 111.92607982354342,
+      "time": 9.606759786605835,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:53:08"
+    },
+    "rect_noise_5": {
+      "method": "CNN",
+      "region": "rect",
+      "noise_sigma": 5,
+      "rmse": 250.11065050876397,
+      "mae": 227.13857196447086,
+      "time": 8.966562986373901,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:53:16"
+    },
+    "rect_noise_10": {
+      "method": "CNN",
+      "region": "rect",
+      "noise_sigma": 10,
+      "rmse": 417.28310469849623,
+      "mae": 388.663476224839,
+      "time": 9.170559644699097,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:53:26"
+    },
+    "irreg_noise_0": {
+      "rmse": 0,
+      "mae": 0,
+      "noise_sigma": 0,
+      "status": "reused"
+    },
+    "irreg_noise_2": {
+      "method": "CNN",
+      "region": "irreg",
+      "noise_sigma": 2,
+      "rmse": 68.4774042104144,
+      "mae": 55.245786371341026,
+      "time": 9.133378505706787,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:54:20"
+    },
+    "irreg_noise_5": {
+      "method": "CNN",
+      "region": "irreg",
+      "noise_sigma": 5,
+      "rmse": 119.5922496898539,
+      "mae": 108.59066403780774,
+      "time": 8.680617094039917,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:54:29"
+    },
+    "irreg_noise_10": {
+      "method": "CNN",
+      "region": "irreg",
+      "noise_sigma": 10,
+      "rmse": 193.96900188062406,
+      "mae": 181.81633278516557,
+      "time": 8.675938129425049,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:54:37"
+    }
+  }
+}

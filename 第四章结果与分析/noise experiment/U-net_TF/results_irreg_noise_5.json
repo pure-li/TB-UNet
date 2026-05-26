@@ -1,0 +1,12 @@
+{
+  "method": "TB-UNet",
+  "region": "irreg",
+  "noise_sigma": 5,
+  "rmse": 32.22138595581055,
+  "mae": 24.881959915161133,
+  "best_epoch": 31,
+  "train_time": 4377.037465333939,
+  "n_params": 4284961,
+  "status": "completed",
+  "timestamp": "2026-05-12 02:50:57"
+}

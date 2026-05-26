@@ -1,0 +1,29 @@
+{
+  "se20": {
+    "best_rmse": 77.02442126375583,
+    "best_mae": 64.14104489510927,
+    "best_ep": 44,
+    "swa_rmse": 80.46009494610527,
+    "swa_mae": 66.62921797884819,
+    "swa_epochs": [
+      40
+    ],
+    "train_time": 4581.337956428528
+  },
+  "config": {
+    "mode": "swa",
+    "region": "2.0deg SE",
+    "rect": [
+      64.5,
+      66.5,
+      30.0,
+      32.0
+    ],
+    "epochs": 100,
+    "max_lr": 0.0005,
+    "pct_start": 0.3,
+    "base_ch": 48,
+    "batch_size": 8,
+    "n_params": 4284961
+  }
+}

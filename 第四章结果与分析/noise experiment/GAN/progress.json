@@ -1,0 +1,79 @@
+{
+  "method": "GAN",
+  "status": "completed",
+  "total_time_min": 2.4,
+  "results": {
+    "rect_noise_0": {
+      "rmse": 0,
+      "mae": 0,
+      "noise_sigma": 0,
+      "status": "reused"
+    },
+    "rect_noise_2": {
+      "method": "GAN",
+      "region": "rect",
+      "noise_sigma": 2,
+      "rmse": 114.0274358594561,
+      "mae": 107.51183581758039,
+      "time": 9.416455745697021,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:56:46"
+    },
+    "rect_noise_5": {
+      "method": "GAN",
+      "region": "rect",
+      "noise_sigma": 5,
+      "rmse": 202.62340880844556,
+      "mae": 187.68542411473922,
+      "time": 8.962305545806885,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:56:55"
+    },
+    "rect_noise_10": {
+      "method": "GAN",
+      "region": "rect",
+      "noise_sigma": 10,
+      "rmse": 354.9295315704283,
+      "mae": 322.68570966260023,
+      "time": 8.995559692382812,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:57:04"
+    },
+    "irreg_noise_0": {
+      "rmse": 0,
+      "mae": 0,
+      "noise_sigma": 0,
+      "status": "reused"
+    },
+    "irreg_noise_2": {
+      "method": "GAN",
+      "region": "irreg",
+      "noise_sigma": 2,
+      "rmse": 59.99482627173218,
+      "mae": 54.15365763965531,
+      "time": 8.952637195587158,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:57:58"
+    },
+    "irreg_noise_5": {
+      "method": "GAN",
+      "region": "irreg",
+      "noise_sigma": 5,
+      "rmse": 71.92895729250593,
+      "mae": 67.31661407533684,
+      "time": 8.998047590255737,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:58:07"
+    },
+    "irreg_noise_10": {
+      "method": "GAN",
+      "region": "irreg",
+      "noise_sigma": 10,
+      "rmse": 174.2939144237238,
+      "mae": 161.23056737341037,
+      "time": 8.930393934249878,
+      "status": "completed",
+      "timestamp": "2026-05-11 19:58:16"
+    }
+  }
+}

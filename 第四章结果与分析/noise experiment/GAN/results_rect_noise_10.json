@@ -1,0 +1,10 @@
+{
+  "method": "GAN",
+  "region": "rect",
+  "noise_sigma": 10,
+  "rmse": 354.9295315704283,
+  "mae": 322.68570966260023,
+  "time": 8.995559692382812,
+  "status": "completed",
+  "timestamp": "2026-05-11 19:57:04"
+}

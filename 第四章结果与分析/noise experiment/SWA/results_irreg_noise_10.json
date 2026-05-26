@@ -1,0 +1,13 @@
+{
+  "method": "U-Net+TF+SWA",
+  "region": "irreg",
+  "noise_sigma": 10,
+  "best_rmse": 39.23309121511144,
+  "best_ep": 57,
+  "swa_rmse": 42.041033227936694,
+  "swa_epochs": [
+    60
+  ],
+  "train_time": 4354.260705709457,
+  "status": "completed"
+}
