@@ -1,27 +1,27 @@
 #!/usr/bin/env python
 """
-U-Net 磁测数据 Inpainting 消融实验脚本
+U-Net Magnetic Data Inpainting — Ablation Experiment Script
 ========================================
-通过命令行参数控制各消融变量，支持单次实验和批量实验（--run_all）。
+Control ablation variables via CLI. Supports single and batch experiments (--run_all).
 
-消融维度：
-  1. 跳跃连接（--use_skip / --no_skip）
-  2. 多通道输入（--input_ch 4 / 1）
-  3. 梯度损失权重（--grad_weight 0.1 / 0.0）
-  4. 训练遮挡策略（--mask_mode mixed / block / scatter）
-  5. RBF epsilon 模式（--eps_mode adaptive / fixed）
+Ablation dimensions:
+  1. Skip connections (--use_skip / --no_skip)
+  2. Multi-channel input (--input_ch 4 / 1)
+  3. Gradient loss weight (--grad_weight 0.1 / 0.0)
+  4. Training mask strategy (--mask_mode mixed / block / scatter)
+  5. RBF epsilon mode (--eps_mode adaptive / fixed)
 
-用法：
-  # 单次实验（Baseline）
+Usage:
+  # Single experiment (Baseline)
   python U-net.py --exp_name baseline
 
-  # 单次消融
+  # Single ablation
   python U-net.py --exp_name no_skip --no_skip
 
-  # 批量运行全部消融实验
+  # Batch run all ablation experiments
   python U-net.py --run_all --epochs 30
 
-  # 快速测试（减少 epoch）
+  # Quick test (reduced epochs)
   python U-net.py --run_all --epochs 5 --output_dir ablation_quick
 """
 
@@ -36,7 +36,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')  # 非交互后端，避免 plt.show() 阻塞
+matplotlib.use('Agg')  # Non-interactive backend; avoids plt.show() blocking
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from scipy.interpolate import RBFInterpolator, RegularGridInterpolator
@@ -53,14 +53,14 @@ from torch.utils.data import Dataset, DataLoader
 warnings.filterwarnings('ignore')
 
 # =============================================================================
-# 0. 命令行参数
+# 0. Command-line Arguments
 # =============================================================================
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='U-Net Inpainting 消融实验',
+        description='U-Net Inpainting Ablation Experiment',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-消融实验预设 (用 --run_all 一键运行):
+Ablation experiment presets (use --run_all for one-click run):
   baseline    : skip=True,  ch=4, grad=0.1, mask=mixed, eps=adaptive
   no_skip     : skip=False, ch=4, grad=0.1, mask=mixed, eps=adaptive
   single_ch   : skip=True,  ch=1, grad=0.1, mask=mixed, eps=adaptive
@@ -71,80 +71,80 @@ def parse_args():
         """
     )
 
-    # ---- 实验标识 ----
+    # ---- Experiment Identifier ----
     parser.add_argument('--exp_name', type=str, default='baseline',
-                        help='实验名称，用于输出文件名和结果记录')
+                        help='Experiment name for output naming and result logging')
     parser.add_argument('--run_all', action='store_true',
-                        help='运行全部 7 组消融实验（baseline + 6 ablation）')
+                        help='Run all 7 ablation experiments (baseline + 6 ablation)')
 
-    # ---- 消融变量 ----
+    # ---- Ablation Variables ----
     parser.add_argument('--no_skip', action='store_true',
-                        help='禁用跳跃连接（U-Net → Autoencoder）')
+                        help='Disable skip connections (U-Net -> Autoencoder)')
     parser.add_argument('--use_skip', action='store_true', default=True,
-                        help='启用跳跃连接（默认）')
+                        help='Enable skip connections (default)')
     parser.add_argument('--input_ch', type=int, default=4,
-                        help='输入通道数（4=FXYZ 多通道, 1=仅 F 分量）')
+                        help='Input channels (4=FXYZ multi-channel, 1=F only)')
     parser.add_argument('--grad_weight', type=float, default=0.1,
-                        help='梯度损失权重（0.0 = 纯 MSE）')
+                        help='Gradient loss weight (0.0 = pure MSE)')
     parser.add_argument('--mask_mode', type=str, default='mixed',
                         choices=['mixed', 'block', 'scatter'],
-                        help='训练遮挡策略')
+                        help='Training mask strategy')
     parser.add_argument('--eps_mode', type=str, default='adaptive',
                         choices=['adaptive', 'fixed'],
-                        help='RBF epsilon 模式（adaptive=自适应, fixed=固定值）')
+                        help='RBF epsilon mode (adaptive=auto, fixed=constant)')
     parser.add_argument('--interp_method', type=str, default='rbf',
                         choices=['rbf', 'kriging', 'tps'],
-                        help='网格插值方法: rbf(RBF cubic), kriging(克里金), tps(薄板样条/最小曲率)')
+                        help='Grid interpolation: rbf (cubic), kriging, tps (thin-plate spline / min-curvature)')
     parser.add_argument('--fixed_eps', type=float, default=1.0,
-                        help='当 --eps_mode fixed 时的 epsilon 值')
+                        help='Epsilon value when --eps_mode fixed')
 
-    # ---- 训练超参 ----
+    # ---- Training Hyperparameters ----
     parser.add_argument('--epochs', type=int, default=30,
-                        help='训练轮数')
+                        help='Number of training epochs')
     parser.add_argument('--base_ch', type=int, default=48,
-                        help='U-Net 基础通道数')
+                        help='U-Net base channel count')
     parser.add_argument('--batch_size', type=int, default=16,
-                        help='批次大小')
+                        help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-4,
-                        help='初始学习率')
+                        help='Initial learning rate')
     parser.add_argument('--max_lr', type=float, default=1e-3,
-                        help='OneCycleLR 最大学习率')
+                        help='OneCycleLR maximum learning rate')
     parser.add_argument('--weight_decay', type=float, default=1e-5,
-                        help='AdamW 权重衰减')
+                        help='AdamW weight decay')
 
-    # ---- 路径与输出 ----
+    # ---- Paths & Output ----
     parser.add_argument('--data_path', type=str,
                         default=r'F:\PINN实验\venv1\PINN数据3.xlsx',
-                        help='Excel 数据文件路径')
+                        help='Path to Excel data file')
     parser.add_argument('--output_dir', type=str, default='ablation_results',
-                        help='输出目录')
+                        help='Output directory')
     parser.add_argument('--seed', type=int, default=42,
-                        help='随机种子')
+                        help='Random seed')
     parser.add_argument('--no_gpu', action='store_true',
-                        help='强制使用 CPU')
+                        help='Force CPU usage')
     parser.add_argument('--tta', action='store_true',
-                        help='启用 Test-Time Augmentation（多次随机mask推理取平均）')
+                        help='Enable TTA (average multiple random-mask inferences)')
     parser.add_argument('--tta_times', type=int, default=10,
-                        help='TTA 推理次数（默认 10）')
+                        help='Number of TTA passes (default 10)')
     parser.add_argument('--self_train', action='store_true',
-                        help='启用自监督迭代精炼')
+                        help='Enable self-supervised iterative refinement')
     parser.add_argument('--self_train_rounds', type=int, default=3,
-                        help='自训练迭代轮数（默认 3）')
+                        help='Self-training rounds (default 3)')
     parser.add_argument('--pretrain', action='store_true',
-                        help='启用合成数据预训练 + 真实数据微调')
+                        help='Enable synthetic pre-training + real data fine-tuning')
     parser.add_argument('--n_synthetic', type=int, default=200,
-                        help='合成样本数（默认 200）')
+                        help='Number of synthetic samples (default 200)')
     parser.add_argument('--pretrain_epochs', type=int, default=20,
-                        help='预训练 epoch 数（默认 20）')
+                        help='Pre-training epochs (default 20)')
 
     return parser.parse_args()
 
 
 # =============================================================================
-# 1. 数据加载与预处理（共享部分）
+# 1. Data Loading & Preprocessing (shared)
 # =============================================================================
 def load_raw_data(file_path):
-    """读取 Excel 并返回原始 DataFrame 及常量"""
+    """Read Excel file and return raw DataFrame with constants."""
     threshold = 0.0005
     df = pd.read_excel(file_path, sheet_name='Sheet1')
     if df.shape[1] > 7:
@@ -153,7 +153,7 @@ def load_raw_data(file_path):
     df['X'] = df['X'].abs()
     df['Z'] = df['Z'].abs()
 
-    # 测线划分与降采样
+    # Survey line segmentation & downsampling
     df['diff_lon'] = df['lon'].diff().abs()
     df['line_id'] = (df['diff_lon'] > threshold).cumsum() + 1
     df_sampled = df.groupby('line_id', group_keys=False).apply(
@@ -162,7 +162,7 @@ def load_raw_data(file_path):
     df['diff_lon'] = df['lon'].diff().abs()
     df['line_id'] = (df['diff_lon'] > threshold).cumsum() + 1
 
-    # 坐标转换
+    # Coordinate transformation
     lon0 = df['lon'].mean()
     lat0 = df['lat'].mean()
     R = 6371
@@ -178,7 +178,7 @@ def load_raw_data(file_path):
                .apply(lambda x: 1 if x > 0 else -1).to_dict())
     df['dir'] = df['line_id'].map(dir_map)
 
-    # 空白区域
+    # Blank region
     LON_MIN, LON_MAX = 113.0085, 113.0155
     LAT_MIN, LAT_MAX = 34.5480, 34.5604
     mask_inside = ((df['lon'] >= LON_MIN) & (df['lon'] <= LON_MAX) &
@@ -191,7 +191,7 @@ def load_raw_data(file_path):
 
 def build_grid(train_df, lon0, lat0, R, LON_MIN, LON_MAX, LAT_MIN, LAT_MAX,
                resolution_km=0.05):
-    """构建全区域网格并返回网格坐标、掩膜等"""
+    """Build full-area grid and return coordinates, masks, etc."""
     x_min, x_max = train_df['x'].min(), train_df['x'].max()
     y_min, y_max = train_df['y'].min(), train_df['y'].max()
     expand = -0.1
@@ -214,24 +214,24 @@ def build_grid(train_df, lon0, lat0, R, LON_MIN, LON_MAX, LAT_MIN, LAT_MAX,
 
 
 def _interp_rbf(points, values, grid_points, grid_shape, epsilon):
-    """RBF cubic 插值"""
+    """RBF cubic interpolation."""
     rbf = RBFInterpolator(points, values, kernel='cubic', epsilon=epsilon)
     return rbf(grid_points).reshape(grid_shape)
 
 
 def _interp_tps(points, values, grid_points, grid_shape):
-    """薄板样条插值（= 最小曲率插值，minimizes bending energy ∇⁴F=0）"""
+    """Thin-plate spline interpolation (= minimum curvature)."""
     rbf = RBFInterpolator(points, values, kernel='thin_plate_spline')
     return rbf(grid_points).reshape(grid_shape)
 
 
 def _interp_kriging(points, values, grid_x, grid_y):
-    """普通克里金插值（考虑空间各向异性）"""
+    """Ordinary Kriging interpolation (accounts for spatial anisotropy)."""
     nx, ny = grid_x.shape[0], grid_y.shape[1]
     x_vals = grid_x[:, 0].ravel()
     y_vals = grid_y[0, :].ravel()
 
-    # 克里金对点数敏感，>2000点降采样
+    # Kriging is point-count sensitive; downsample if >2000
     if len(points) > 2000:
         idx = np.random.RandomState(42).choice(len(points), 2000, replace=False)
         pts, vals = points[idx], values[idx]
@@ -249,7 +249,7 @@ def _interp_kriging(points, values, grid_x, grid_y):
         z, ss = OK.execute('grid', x_vals, y_vals)
         return z.reshape(grid_x.shape)
     except Exception:
-        # 克里金失败时回退到 TPS
+        # Fall back to TPS if Kriging fails
         return _interp_tps(points, values,
                            np.column_stack([grid_x.ravel(), grid_y.ravel()]),
                            grid_x.shape)
@@ -258,9 +258,9 @@ def _interp_kriging(points, values, grid_x, grid_y):
 def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
                     eps_mode='adaptive', fixed_eps=1.0, interp_method='rbf'):
     """
-    网格插值：用区域外实测数据对全区域网格插值。
-    支持 RBF cubic / 克里金 / 薄板样条(最小曲率)。
-    返回 F_grid, X_grid, Y_grid, Z_grid（空白区域为 NaN）以及归一化参数。
+    Grid interpolation: interpolate full-area grid from measurements outside blank.
+    Supports RBF cubic / Kriging / thin-plate spline (minimum curvature).
+    Returns F_grid, X_grid, Y_grid, Z_grid (NaN in blank) and normalization params.
     """
     points_xy = train_df[['x', 'y']].values
     values_F = train_df['F'].values
@@ -268,7 +268,7 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
     values_Y = train_df['Y'].values
     values_Z = train_df['Z'].values
 
-    # 降采样（>5000 点时，RBF/TPS需要）
+    # Downsample (>5000 pts needed for RBF/TPS)
     if interp_method in ('rbf', 'tps') and len(points_xy) > 5000:
         idx_sample = np.random.choice(len(points_xy), 5000, replace=False)
         points_xy_sub = points_xy[idx_sample]
@@ -289,7 +289,7 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
         values_Y_sub = values_Y
         values_Z_sub = values_Z
 
-    # epsilon (仅RBF需要)
+    # epsilon (only needed for RBF)
     if interp_method == 'rbf':
         if eps_mode == 'adaptive':
             tree = KDTree(points_xy_sub)
@@ -299,18 +299,18 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
         else:
             epsilon = fixed_eps
             median_dist = None
-        print(f"  插值方法: RBF cubic, epsilon={epsilon:.4f}"
+        print(f"  Interpolation: RBF cubic, epsilon={epsilon:.4f}"
               + (f", median_dist={median_dist:.4f}" if median_dist else ""))
     elif interp_method == 'tps':
         epsilon = None
-        print(f"  插值方法: 薄板样条 (最小曲率)")
+        print(f"  Interpolation: thin-plate spline (min-curvature)")
     else:
         epsilon = None
-        print(f"  插值方法: 普通克里金")
+        print(f"  Interpolation: Ordinary Kriging")
 
     grid_points = np.column_stack([grid_x.ravel(), grid_y.ravel()])
 
-    # F 分量插值
+    # F component interpolation
     if interp_method == 'rbf':
         F_grid = _interp_rbf(points_xy_sub, values_F_sub, grid_points, grid_x.shape, epsilon)
     elif interp_method == 'tps':
@@ -318,7 +318,7 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
     else:  # kriging
         F_grid = _interp_kriging(points_xy_sub, values_F_sub, grid_x, grid_y)
 
-    # X/Y/Z 分量插值
+    # X/Y/Z component interpolation
     if interp_method == 'kriging':
         X_grid = _interp_kriging(points_xy_sub, values_X_sub, grid_x, grid_y)
         Y_grid = _interp_kriging(points_xy_sub, values_Y_sub, grid_x, grid_y)
@@ -327,7 +327,7 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
         X_grid = _interp_tps(points_xy_sub, values_X_sub, grid_points, grid_x.shape)
         Y_grid = _interp_tps(points_xy_sub, values_Y_sub, grid_points, grid_x.shape)
         Z_grid = _interp_tps(points_xy_sub, values_Z_sub, grid_points, grid_x.shape)
-        # TPS 轻度平滑
+        # Light TPS smoothing
         sigma_light = 0.15
         for g in [X_grid, Y_grid, Z_grid]:
             g[:] = gaussian_filter1d(g, sigma_light, axis=0)
@@ -347,13 +347,13 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
             g[:] = gaussian_filter1d(g, sigma_light, axis=0)
             g[:] = gaussian_filter1d(g, sigma_light, axis=1)
 
-    # 空白区域设为 NaN
+    # Set blank region to NaN
     F_grid[mask_blank] = np.nan
     X_grid[mask_blank] = np.nan
     Y_grid[mask_blank] = np.nan
     Z_grid[mask_blank] = np.nan
 
-    # 归一化参数
+    # Normalization parameters
     valid_mask = ~np.isnan(F_grid)
     valid_vals = F_grid[valid_mask]
     F_min, F_max = np.min(valid_vals), np.max(valid_vals)
@@ -370,23 +370,23 @@ def rbf_interpolate(train_df, grid_x, grid_y, mask_blank,
 
 
 # =============================================================================
-# 1.5 合成磁场图生成（物理正演：随机磁偶极子）
+# 1.5 Synthetic Map Generation (physics forward: random dipoles)
 # =============================================================================
 def dipole_total_field_anomaly(grid_x, grid_y, dipoles, inc=53.0, dec=-4.0):
     """
-    计算多个磁偶极子在地表产生的总场异常 ΔT。
-    地磁场方向: 倾角 inc, 偏角 dec (郑州地区 ~53°, -4°)
+    Compute total-field anomaly ΔT at surface from multiple magnetic dipoles.
+    Geomagnetic direction: inclination inc, declination dec (~53°, -4°)
 
     Parameters
     ----------
-    grid_x, grid_y : 2D arrays, 网格坐标 (km)
+    grid_x, grid_y : 2D arrays, grid coordinates (km)
     dipoles : list of (x0, y0, z0, mx, my, mz)
-        每个偶极子: 位置(x0,y0,z0) km, 磁矩分量(mx,my,mz) A·m²
-    inc, dec : float, 地磁场倾角和偏角
+        Each dipole: position (x0,y0,z0) km, moment (mx,my,mz) A·m²
+    inc, dec : float, geomagnetic inclination and declination
 
     Returns
     -------
-    dT : 2D array, 总场异常 (nT)
+    dT : 2D array, total-field anomaly (nT)
     """
     fx = np.cos(np.radians(inc)) * np.cos(np.radians(dec))
     fy = np.cos(np.radians(inc)) * np.sin(np.radians(dec))
@@ -398,19 +398,19 @@ def dipole_total_field_anomaly(grid_x, grid_y, dipoles, inc=53.0, dec=-4.0):
     for x0, y0, z0, mx, my, mz in dipoles:
         dx = grid_x - x0  # km
         dy = grid_y - y0  # km
-        dz = -z0          # 观测面 z=0, 偶极子在 z0 深处
+        dz = -z0          # Observation surface z=0; dipole at depth z0
         r2 = dx**2 + dy**2 + dz**2
         r = np.sqrt(np.maximum(r2, 1e-10))
         r5 = r**5
 
         m_dot_r = mx * dx + my * dy + mz * dz
 
-        # 偶极子磁场三分量 (nT)
+        # Dipole field components (nT)
         Bx = mu0_over_4pi * (3 * m_dot_r * dx / r5 - mx / r**3)
         By = mu0_over_4pi * (3 * m_dot_r * dy / r5 - my / r**3)
         Bz = mu0_over_4pi * (3 * m_dot_r * dz / r5 - mz / r**3)
 
-        # 投影到地磁场方向 → 总场异常
+        # Project onto geomagnetic direction → total-field anomaly
         dT += Bx * fx + By * fy + Bz * fz
 
     return dT
@@ -419,8 +419,8 @@ def dipole_total_field_anomaly(grid_x, grid_y, dipoles, inc=53.0, dec=-4.0):
 def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
                                F_range, X_range, Y_range, Z_range, rng):
     """
-    物理正演生成一张合成磁场图。
-    随机放置磁偶极子 → 计算 ΔT 和三分量异常 → 加上区域背景场。
+    Generate a synthetic magnetic map via physics-based forward modeling.
+    Random dipoles → compute ΔT and component anomalies → add regional background.
     """
     nx, ny = grid_x.shape
     x_vals = grid_x[:, 0]
@@ -428,16 +428,16 @@ def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
     x_min, x_max = x_vals.min(), x_vals.max()
     y_min, y_max = y_vals.min(), y_vals.max()
 
-    # 随机偶极子参数
+    # Random dipole parameters
     n_dipoles = rng.randint(3, 15)
     dipoles = []
     for _ in range(n_dipoles):
         x0 = rng.uniform(x_min - 0.2, x_max + 0.2)
         y0 = rng.uniform(y_min - 0.2, y_max + 0.2)
-        z0 = rng.uniform(0.05, 1.5)  # 深度 50m ~ 1.5km
-        # 磁矩: 感应磁化为主 + 剩余磁化扰动
-        # 感应方向 ≈ 地磁场方向 (inc~53°, dec~-4°)
-        m_mag = rng.uniform(1e3, 1e6)  # 磁矩大小
+        z0 = rng.uniform(0.05, 1.5)  # Depth 50m ~ 1.5km
+        # Magnetization: mainly induced + remanent perturbation
+        # Induced direction ~ geomagnetic field (inc~53°, dec~-4°)
+        m_mag = rng.uniform(1e3, 1e6)  # Moment magnitude
         inc_r = 53.0 + rng.uniform(-20, 20)
         dec_r = -4.0 + rng.uniform(-30, 30)
         mx = m_mag * np.cos(np.radians(inc_r)) * np.cos(np.radians(dec_r))
@@ -445,18 +445,18 @@ def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
         mz = m_mag * np.sin(np.radians(inc_r))
         dipoles.append((x0, y0, z0, mx, my, mz))
 
-    # 计算总场异常 ΔT
+    # Compute total-field anomaly ΔT
     dT = dipole_total_field_anomaly(grid_x, grid_y, dipoles, inc=53.0, dec=-4.0)
 
-    # 加区域背景场（真实数据的F分量均值附近 + 缓慢变化趋势）
+    # Add regional background (near mean F + slow trend)
     F_bg = (F_range[0] + F_range[1]) / 2
     bg_trend = (grid_x - grid_x.mean()) * rng.uniform(-50, 50) + \
                (grid_y - grid_y.mean()) * rng.uniform(-50, 50)
     F_syn = F_bg + dT + bg_trend
 
-    # 三分量异常 → 同样用偶极子计算，加各自背景
+    # Component anomalies → also from dipoles, add backgrounds
     # X ≈ H*cos(dec), Y ≈ H*sin(dec), Z ≈ F*sin(inc)
-    # 简化: 异常场在三分量上的投影近似于总场异常在不同方向的分量
+    # Simplify: component anomalies ~ projection of total-field anomaly
     fx = np.cos(np.radians(53.0)) * np.cos(np.radians(-4.0))
     fy = np.cos(np.radians(53.0)) * np.sin(np.radians(-4.0))
     fz = np.sin(np.radians(53.0))
@@ -467,7 +467,7 @@ def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
     Y_syn = Y_bg + dT * fy + rng.randn(*grid_x.shape) * 5.0
     Z_syn = Z_bg + dT * fz + rng.randn(*grid_x.shape) * 5.0
 
-    # 缩放到真实数据变化幅度
+    # Scale to real data variation amplitude
     F_amp = F_syn.std()
     target_amp = (F_range[1] - F_range[0]) * rng.uniform(0.05, 0.25)
     if F_amp > 1e-6:
@@ -479,7 +479,7 @@ def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
     Y_syn = Y_bg + dT_scaled * fy + rng.randn(*grid_x.shape) * 3.0
     Z_syn = Z_bg + dT_scaled * fz + rng.randn(*grid_x.shape) * 3.0
 
-    # 模拟 RBF 插值：非空白区加噪声，空白区设 NaN
+    # Simulate RBF interpolation: noise outside blank, NaN inside
     F_grid = F_syn.copy()
     X_grid = X_syn.copy()
     Y_grid = Y_syn.copy()
@@ -496,7 +496,7 @@ def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
     Y_grid[mask_blank] = np.nan
     Z_grid[mask_blank] = np.nan
 
-    # 归一化
+    # Normalize
     F_valid = F_syn[~mask_blank]
     F_min, F_max = F_valid.min(), F_valid.max()
     if np.isclose(F_max - F_min, 0):
@@ -527,7 +527,7 @@ def generate_synthetic_sample(grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
 
 
 # =============================================================================
-# 1.6 合成数据预训练
+# 1.6 Synthetic Data Pre-training
 # =============================================================================
 class SyntheticDataset(Dataset):
     def __init__(self, samples, target_size=(128, 128), mask_ratio=0.2, mask_mode='mixed'):
@@ -537,7 +537,7 @@ class SyntheticDataset(Dataset):
         self.mask_mode = mask_mode
 
     def __len__(self):
-        return len(self.samples) * 10  # 每个样本生成10个mask变体
+        return len(self.samples) * 10  # 10 mask variants per sample
 
     def _random_block_mask(self, valid_region, H, W):
         max_h = min(int(H * 0.4), 48)
@@ -565,19 +565,19 @@ class SyntheticDataset(Dataset):
             resized[c] = resize(multi_channel[c], self.target_size, mode='constant', anti_aliasing=True)
         target_resized = resize(F_target_full, self.target_size, mode='constant', anti_aliasing=True)
 
-        # 空白区掩膜
+        # Blank region mask
         blank_mask = np.isnan(target_resized)
         valid_region = ~blank_mask
 
         input_img = torch.tensor(resized, dtype=torch.float32)
-        # 空白区填0
+        # Fill blank with 0
         for c in range(C):
             input_img[c][torch.from_numpy(blank_mask)] = 0.0
 
         target_tensor = torch.tensor(target_resized, dtype=torch.float32).unsqueeze(0)
         target_tensor[:, torch.from_numpy(blank_mask)] = 0.0
 
-        # 随机mask（只在有效区）
+        # Random mask (valid region only)
         H_t, W_t = th, tw
         if self.mask_mode == 'mixed':
             if np.random.random() < 0.5:
@@ -608,7 +608,7 @@ class SyntheticDataset(Dataset):
 def pretrain_on_synthetic(model, synthetic_samples, epochs, batch_size, lr,
                            max_lr, weight_decay, target_size, mask_mode, device,
                            verbose=True):
-    """在合成数据上预训练U-Net"""
+    """Pre-train U-Net on synthetic data."""
     dataset = SyntheticDataset(synthetic_samples, target_size, mask_mode=mask_mode)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
@@ -620,7 +620,7 @@ def pretrain_on_synthetic(model, synthetic_samples, epochs, batch_size, lr,
         optimizer, max_lr=max_lr, total_steps=total_steps,
         pct_start=0.1, anneal_strategy='cos', final_div_factor=1e4)
 
-    print(f"  预训练: {len(synthetic_samples)} 合成样本, {epochs} epochs, "
+    print(f"  Pre-training: {len(synthetic_samples)} synthetic samples, {epochs} epochs, "
           f"{steps_per_epoch} steps/epoch")
 
     for epoch in range(epochs):
@@ -650,7 +650,7 @@ def pretrain_on_synthetic(model, synthetic_samples, epochs, batch_size, lr,
 
 def build_multichannel(F_grid, X_grid, Y_grid, Z_grid, mask_blank,
                        input_ch=4):
-    """构建多通道/单通道输入张量"""
+    """Build multi-channel or single-channel input tensor."""
     def normalize_channel(data, mask_valid):
         vals = data[mask_valid]
         if len(vals) == 0:
@@ -684,7 +684,7 @@ def build_multichannel(F_grid, X_grid, Y_grid, Z_grid, mask_blank,
 
 
 # =============================================================================
-# 2. 模型定义
+# 2. Model Definition
 # =============================================================================
 class DoubleConv(nn.Module):
     def __init__(self, in_ch, out_ch, mid_ch=None):
@@ -717,7 +717,7 @@ class Down(nn.Module):
 
 
 class Up(nn.Module):
-    """上采样模块，use_skip=False 时退化为纯解码器块"""
+    """Upsampling module; pure decoder block when use_skip=False."""
     def __init__(self, in_ch, out_ch, use_skip=True):
         super().__init__()
         self.use_skip = use_skip
@@ -741,7 +741,7 @@ class Up(nn.Module):
 
 
 class UNetInpainter(nn.Module):
-    """U-Net (use_skip=True) 或 纯 Autoencoder (use_skip=False)"""
+    """U-Net (use_skip=True) or pure Autoencoder (use_skip=False)."""
     def __init__(self, in_chans=4, base_ch=48, use_skip=True):
         super().__init__()
         self.use_skip = use_skip
@@ -752,7 +752,7 @@ class UNetInpainter(nn.Module):
         self.down3 = Down(base_ch * 4, base_ch * 4)
         self.down4 = Down(base_ch * 4, base_ch * 4)
 
-        # Up 模块：skip=True 时 in_ch = skip_channel + up_channel
+        # Up: when skip=True, in_ch = skip_channel + up_channel
         if use_skip:
             self.up1 = Up(base_ch * 4 + base_ch * 4, base_ch * 2, use_skip=True)
             self.up2 = Up(base_ch * 2 + base_ch * 4, base_ch * 2, use_skip=True)
@@ -788,7 +788,7 @@ class UNetInpainter(nn.Module):
 
 
 # =============================================================================
-# 3. 损失函数
+# 3. Loss Function
 # =============================================================================
 class CompositeLoss(nn.Module):
     def __init__(self, grad_weight=0.1):
@@ -824,7 +824,7 @@ class CompositeLoss(nn.Module):
 
 
 # =============================================================================
-# 4. 数据集
+# 4. Dataset
 # =============================================================================
 class InpaintingDataset(Dataset):
     def __init__(self, multi_image, permanent_mask, mask_mode='mixed',
@@ -895,7 +895,7 @@ class InpaintingDataset(Dataset):
 
 
 # =============================================================================
-# 5. 训练与评估
+# 5. Training & Evaluation
 # =============================================================================
 def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device):
     model.train()
@@ -949,7 +949,7 @@ def train_model(model, dataloader, criterion, epochs, device,
 def evaluate_model_tta(model, multi_channel, permanent_mask_resized, target_size,
                        F_grid, mask_blank, x_grid, y_grid, test_df, ll_to_xy,
                        denormalize, nx, ny, device, n_tta=10, mask_mode='mixed'):
-    """TTA 评估：多次随机mask推理取平均，降低方差"""
+    """TTA evaluation: average over multiple random-mask inferences to reduce variance."""
     C, H_orig, W_orig = multi_channel.shape
     tH, tW = target_size
     resized = np.zeros((C, tH, tW), dtype=np.float32)
@@ -1015,7 +1015,7 @@ def evaluate_model_tta(model, multi_channel, permanent_mask_resized, target_size
             out = model(input_batch)
         outputs_tta.append(out.squeeze().cpu().numpy())
 
-    # 平均
+    # Average
     output_np = np.mean(outputs_tta, axis=0)
     output_np = denormalize(output_np)
 
@@ -1048,8 +1048,8 @@ def evaluate_model_tta(model, multi_channel, permanent_mask_resized, target_size
 def evaluate_model(model, multi_channel, permanent_mask_resized, target_size,
                    F_grid, mask_blank, x_grid, y_grid, test_df, ll_to_xy,
                    denormalize, nx, ny, device):
-    """评估模型：返回 RMSE, MAE 及详细结果"""
-    # 准备输入
+    """Evaluate model; returns RMSE, MAE, and detailed results."""
+    # Prepare input
     C, H, W = multi_channel.shape
     resized = np.zeros((C, target_size[0], target_size[1]), dtype=np.float32)
     for c in range(C):
@@ -1070,7 +1070,7 @@ def evaluate_model(model, multi_channel, permanent_mask_resized, target_size,
     result_grid = F_grid.copy()
     result_grid[mask_blank] = output_full[mask_blank]
 
-    # 在测试点上评估
+    # Evaluate at test points
     test_xy = np.column_stack(ll_to_xy(test_df['lon'].values, test_df['lat'].values))
     interp = RegularGridInterpolator((x_grid, y_grid), result_grid,
                                      method='linear', bounds_error=False,
@@ -1091,14 +1091,14 @@ def evaluate_model(model, multi_channel, permanent_mask_resized, target_size,
 
 
 # =============================================================================
-# 6. 单次实验运行
+# 6. Single Experiment Run
 # =============================================================================
 def run_experiment(args, data_cache, exp_cfg=None):
     """
-    运行一次实验。
-    exp_cfg: dict，覆盖 args 中的消融变量（用于 run_all 模式）
+    Run a single experiment.
+    exp_cfg: dict, overrides ablation variables in args (for run_all mode).
     """
-    # 合并配置
+    # Merge config
     cfg = vars(args).copy()
     if exp_cfg:
         cfg.update(exp_cfg)
@@ -1124,14 +1124,14 @@ def run_experiment(args, data_cache, exp_cfg=None):
     device_str = 'cpu' if cfg['no_gpu'] else ('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"\n{'='*60}")
-    print(f"  实验: {exp_name}")
+    print(f"  Experiment: {exp_name}")
     print(f"  skip={use_skip}, ch={input_ch}, grad_w={grad_weight}, "
           f"mask={mask_mode}, eps={eps_mode}, interp={interp_method}")
     print(f"  epochs={epochs}, base_ch={base_ch}, device={device_str}"
           + (f", TTA={tta_times}" if use_tta else ""))
     print(f"{'='*60}")
 
-    # 固定随机种子
+    # Fix random seed
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -1139,7 +1139,7 @@ def run_experiment(args, data_cache, exp_cfg=None):
 
     device = torch.device(device_str)
 
-    # 解包数据缓存
+    # Unpack data cache
     train_df = data_cache['train_df']
     test_df = data_cache['test_df']
     lon0 = data_cache['lon0']
@@ -1151,24 +1151,24 @@ def run_experiment(args, data_cache, exp_cfg=None):
     LAT_MIN = data_cache['LAT_MIN']
     LAT_MAX = data_cache['LAT_MAX']
 
-    # 构建网格
+    # Build grid
     (x_grid, y_grid, grid_x, grid_y, lon_grid_full, lat_grid_full,
      mask_blank, nx, ny) = build_grid(
         train_df, lon0, lat0, R, LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)
 
-    print(f"  网格: {nx} x {ny}, 训练点: {len(train_df)}, 测试点: {len(test_df)}")
+    print(f"  Grid: {nx} x {ny}, train pts: {len(train_df)}, test pts: {len(test_df)}")
 
-    # RBF 插值
-    print("  插值中...")
+    # RBF interpolation
+    print("  Interpolating...")
     F_grid, X_grid, Y_grid, Z_grid, F_min, F_max, normalize, denormalize = \
         rbf_interpolate(train_df, grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
                          interp_method=interp_method)
 
-    # 构建多通道
+    # Build multi-channel
     multi_channel = build_multichannel(F_grid, X_grid, Y_grid, Z_grid,
                                        mask_blank, input_ch)
 
-    # 缩放
+    # Resize
     target_size = (128, 128)
     C = multi_channel.shape[0]
     multi_resized = np.zeros((C, target_size[0], target_size[1]), dtype=np.float32)
@@ -1180,47 +1180,47 @@ def run_experiment(args, data_cache, exp_cfg=None):
     train_image = multi_resized.copy()
     train_image[:, permanent_mask_resized] = 0.0
 
-    # 模型
+    # Model
     model = UNetInpainter(in_chans=input_ch, base_ch=base_ch,
                           use_skip=use_skip).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  参数量: {n_params:,}")
+    print(f"  Parameters: {n_params:,}")
 
-    # 损失与数据
+    # Loss & data
     criterion = CompositeLoss(grad_weight=grad_weight).to(device)
     dataset = InpaintingDataset(train_image, permanent_mask_resized,
                                 mask_mode=mask_mode, mask_ratio=0.2)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             num_workers=0)
 
-    # 训练
-    print(f"  训练中 ({epochs} epochs)...")
+    # Train
+    print(f"  Training ({epochs} epochs)...")
     t0 = time.time()
     best_loss = train_model(model, dataloader, criterion, epochs, device,
                             lr=lr, max_lr=max_lr, weight_decay=weight_decay)
     train_time = time.time() - t0
-    print(f"  最佳 Loss: {best_loss:.6f}, 训练用时: {train_time:.1f}s")
+    print(f"  Best Loss: {best_loss:.6f}, train time: {train_time:.1f}s")
 
-    # 评估
+    # Evaluate
     def simple_denorm(x):
         return (x + 1) / 2 * (F_max - F_min) + F_min
 
     if use_tta:
-        print(f"  TTA 评估中 (n={tta_times})...")
+        print(f"  TTA evaluating (n={tta_times})...")
         t0_eval = time.time()
         rmse, mae, result_grid, output_full = evaluate_model_tta(
             model, multi_channel, permanent_mask_resized, target_size,
             F_grid, mask_blank, x_grid, y_grid, test_df, ll_to_xy,
             simple_denorm, nx, ny, device, n_tta=tta_times, mask_mode=mask_mode)
         eval_time = time.time() - t0_eval
-        print(f"  TTA 用时: {eval_time:.1f}s")
+        print(f"  TTA time: {eval_time:.1f}s")
     else:
         rmse, mae, result_grid, output_full = evaluate_model(
             model, multi_channel, permanent_mask_resized, target_size,
             F_grid, mask_blank, x_grid, y_grid, test_df, ll_to_xy,
             simple_denorm, nx, ny, device)
 
-    # 记录结果
+    # Record results
     result = {
         'exp_name': exp_name,
         'use_skip': use_skip,
@@ -1243,22 +1243,22 @@ def run_experiment(args, data_cache, exp_cfg=None):
 
 
 # =============================================================================
-# 7. 主函数
+# 7. Main Function
 # =============================================================================
 def main():
     args = parse_args()
 
-    # 创建输出目录
+    # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # 加载原始数据（所有实验共享）
+    # Load raw data (shared across experiments)
     print("=" * 60)
-    print("  加载数据...")
+    print("  Loading data...")
     print("=" * 60)
     (df, train_df, test_df, lon0, lat0, R, ll_to_xy,
      LON_MIN, LON_MAX, LAT_MIN, LAT_MAX) = load_raw_data(args.data_path)
-    print(f"  区域外训练样本数: {len(train_df)}")
-    print(f"  空白区域内实测点数: {len(test_df)}")
+    print(f"  Train samples (outside blank): {len(train_df)}")
+    print(f"  Test samples (inside blank): {len(test_df)}")
 
     data_cache = {
         'train_df': train_df,
@@ -1274,7 +1274,7 @@ def main():
     }
 
     if args.run_all:
-        # 7 组实验配置
+        # 7 experiment configurations
         experiments = [
             {'exp_name': '01_baseline',     'no_skip': False, 'input_ch': 4, 'grad_weight': 0.1, 'mask_mode': 'mixed',    'eps_mode': 'adaptive'},
             {'exp_name': '02_no_skip',      'no_skip': True,  'input_ch': 4, 'grad_weight': 0.1, 'mask_mode': 'mixed',    'eps_mode': 'adaptive'},
@@ -1289,19 +1289,19 @@ def main():
         for exp_cfg in experiments:
             result = run_experiment(args, data_cache, exp_cfg)
             all_results.append(result)
-            print(f"\n  结果: RMSE={result['rmse']:.4f}, MAE={result['mae']:.4f}")
+            print(f"\n  Result: RMSE={result['rmse']:.4f}, MAE={result['mae']:.4f}")
 
-        # 保存结果
+        # Save results
         results_df = pd.DataFrame(all_results)
         csv_path = os.path.join(args.output_dir, 'ablation_results.csv')
         results_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-        print(f"\n  结果已保存至: {csv_path}")
+        print(f"\n  Results saved to: {csv_path}")
 
-        # 打印汇总表
+        # Print summary table
         print("\n" + "=" * 80)
-        print("  消融实验结果汇总")
+        print("  Ablation Experiment Results Summary")
         print("=" * 80)
-        header = (f"{'实验':<20s} {'Skip':>6s} {'Ch':>4s} {'GradW':>6s} "
+        header = (f"{'Experiment':<20s} {'Skip':>6s} {'Ch':>4s} {'GradW':>6s} "
                   f"{'Mask':>9s} {'Eps':>10s} {'RMSE':>10s} {'MAE':>10s} "
                   f"{'ΔRMSE%':>10s}")
         print(header)
@@ -1321,17 +1321,17 @@ def main():
                   f"{delta:>+9.2f}%")
 
         print("-" * 80)
-        print("\n  ΔRMSE%: 相比 Baseline 的 RMSE 变化百分比（正值=退化, 负值=改进）")
-        print(f"\n  最佳实验: {min(all_results, key=lambda x: x['rmse'])['exp_name']}"
+        print("\n  ΔRMSE%: change vs Baseline (positive=degradation, negative=improvement)")
+        print(f"\n  Best experiment: {min(all_results, key=lambda x: x['rmse'])['exp_name']}"
               f" (RMSE={min(r['rmse'] for r in all_results):.4f})")
 
-        # 绘制对比图
+        # Plot comparison chart
         plot_ablation_results(all_results, args.output_dir)
 
     elif args.pretrain:
         result = run_pretrain_finetune(args, data_cache)
-        print(f"\n  最终结果: 预训练 RMSE={result['rmse_pretrained']:.4f}, "
-              f"无预训练 RMSE={result['rmse_scratch']:.4f}, "
+        print(f"\n  Final: pretrained RMSE={result['rmse_pretrained']:.4f}, "
+              f"scratch RMSE={result['rmse_scratch']:.4f}, "
               f"Δ={result['delta_rmse']:+.2f} ({result['delta_pct']:+.1f}%)")
 
         json_path = os.path.join(args.output_dir, f'{args.exp_name}_result.json')
@@ -1339,36 +1339,36 @@ def main():
                        for k, v in result.items()}
         with open(json_path, 'w') as f:
             json.dump(json_result, f, indent=2, ensure_ascii=False)
-        print(f"  结果已保存至: {json_path}")
+        print(f"  Results saved to: {json_path}")
 
     elif args.self_train:
         result = run_self_training(args, data_cache)
-        print(f"\n  最终结果: Best RMSE={result['rmse_best']:.4f} (Round {result['best_round']})")
+        print(f"\n  Final: Best RMSE={result['rmse_best']:.4f} (Round {result['best_round']})")
 
         json_path = os.path.join(args.output_dir, f'{args.exp_name}_result.json')
         json_result = {k: (float(v) if isinstance(v, (np.floating, np.integer)) else v)
                        for k, v in result.items() if k != 'round_details'}
         with open(json_path, 'w') as f:
             json.dump(json_result, f, indent=2, ensure_ascii=False)
-        print(f"  结果已保存至: {json_path}")
+        print(f"  Results saved to: {json_path}")
 
     else:
-        # 单次实验
+        # Single experiment
         result = run_experiment(args, data_cache)
-        print(f"\n  结果: RMSE={result['rmse']:.4f}, MAE={result['mae']:.4f}")
+        print(f"\n  Result: RMSE={result['rmse']:.4f}, MAE={result['mae']:.4f}")
 
-        # 保存单次结果
+        # Save single result
         json_path = os.path.join(args.output_dir, f'{args.exp_name}_result.json')
-        # 转换 numpy 类型以便 JSON 序列化
+        # Convert numpy types for JSON serialization
         json_result = {k: (float(v) if isinstance(v, (np.floating, np.integer)) else v)
                        for k, v in result.items()}
         with open(json_path, 'w') as f:
             json.dump(json_result, f, indent=2, ensure_ascii=False)
-        print(f"  结果已保存至: {json_path}")
+        print(f"  Results saved to: {json_path}")
 
 
 def run_self_training(args, data_cache):
-    """自监督迭代精炼：训练→预测空白区→填入伪标签→重新训练，迭代多轮"""
+    """Self-supervised refinement: train -> predict -> pseudo-label -> retrain."""
     cfg = vars(args).copy()
     exp_name = cfg['exp_name']
     use_skip = not cfg['no_skip']
@@ -1390,7 +1390,7 @@ def run_self_training(args, data_cache):
     device_str = 'cpu' if cfg['no_gpu'] else ('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"\n{'='*60}")
-    print(f"  自监督迭代精炼: {exp_name}")
+    print(f"  Self-supervised refinement: {exp_name}")
     print(f"  skip={use_skip}, ch={input_ch}, grad_w={grad_weight}, "
           f"mask={mask_mode}, eps={eps_mode}, interp={interp_method}")
     print(f"  rounds={n_rounds}, epochs={epochs}/round, base_ch={base_ch}, device={device_str}")
@@ -1405,18 +1405,18 @@ def run_self_training(args, data_cache):
     LON_MIN, LON_MAX = data_cache['LON_MIN'], data_cache['LON_MAX']
     LAT_MIN, LAT_MAX = data_cache['LAT_MIN'], data_cache['LAT_MAX']
 
-    # 构建网格（不变）
+    # Build grid (unchanged)
     (x_grid, y_grid, grid_x, grid_y, lon_grid_full, lat_grid_full,
      mask_blank, nx, ny) = build_grid(
         train_df, lon0, lat0, R, LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)
-    print(f"  网格: {nx} x {ny}")
+    print(f"  Grid: {nx} x {ny}")
 
-    # 插值 → 获取基础场（空白区 NaN）
+    # Interpolate → base field (NaN in blank)
     F_grid, X_grid, Y_grid, Z_grid, F_min, F_max, normalize, denormalize = \
         rbf_interpolate(train_df, grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
                          interp_method=interp_method)
 
-    # Aux 分量在空白区的外推值（不放 NaN，提供更好上下文）
+    # Aux components extrapolated in blank (no NaN, better context)
     points_xy = train_df[['x', 'y']].values
     if len(points_xy) > 5000:
         idx_sample = np.random.RandomState(42).choice(len(points_xy), 5000, replace=False)
@@ -1451,12 +1451,12 @@ def run_self_training(args, data_cache):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed + r * 1000)
 
-        # 构建多通道输入：当前 F_grid 在空白区的值即为伪标签
+        # Build multi-channel input: current F_grid values in blank region serve as pseudo-labels
         multi_channel = build_multichannel(
             F_grid, X_grid_aux, Y_grid_aux, Z_grid_aux,
             mask_blank, input_ch)
 
-        # 缩放
+        # Resize
         C = multi_channel.shape[0]
         multi_resized = np.zeros((C, target_size[0], target_size[1]), dtype=np.float32)
         for c in range(C):
@@ -1467,21 +1467,21 @@ def run_self_training(args, data_cache):
         train_image = multi_resized.copy()
         train_image[:, permanent_mask_resized] = 0.0
 
-        # 模型
+        # Model
         model = UNetInpainter(in_chans=input_ch, base_ch=base_ch,
                               use_skip=use_skip).to(device)
         n_params = sum(p.numel() for p in model.parameters())
         if r == 0:
-            print(f"  参数量: {n_params:,}")
+            print(f"  Parameters: {n_params:,}")
 
-        # 训练
+        # Train
         criterion = CompositeLoss(grad_weight=grad_weight).to(device)
         dataset = InpaintingDataset(train_image, permanent_mask_resized,
                                      mask_mode=mask_mode, mask_ratio=0.2)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                                  num_workers=0)
 
-        print(f"  训练中 ({epochs} epochs)...")
+        print(f"  Training ({epochs} epochs)...")
         t0 = time.time()
         best_loss = train_model(model, dataloader, criterion, epochs, device,
                                  lr=lr, max_lr=max_lr, weight_decay=weight_decay,
@@ -1496,7 +1496,7 @@ def run_self_training(args, data_cache):
             F_grid, mask_blank, x_grid, y_grid, test_df, ll_to_xy,
             simple_denorm, nx, ny, device)
 
-        # Debug: 检查输出范围
+        # Debug: check output range
         if r == 0:
             print(f"  [Debug] F_min={F_min:.2f}, F_max={F_max:.2f}, "
                   f"output_full in blank: min={output_full[mask_blank].min():.2f}, "
@@ -1505,10 +1505,10 @@ def run_self_training(args, data_cache):
                   f"min={test_df['F'].values.min():.2f}, "
                   f"max={test_df['F'].values.max():.2f}")
 
-        print(f"  Round {r+1} 结果: RMSE={rmse:.4f}, MAE={mae:.4f}, "
+        print(f"  Round {r+1} result: RMSE={rmse:.4f}, MAE={mae:.4f}, "
               f"Loss={best_loss:.6f}, Time={train_time:.1f}s")
 
-        # 更新 F_grid 空白区为当前预测值（伪标签）
+        # Update F_grid blank with predictions (pseudo-labels)
         F_grid[mask_blank] = output_full[mask_blank]
 
         all_round_results.append({
@@ -1521,7 +1521,7 @@ def run_self_training(args, data_cache):
 
     total_time = time.time() - t_total
     print(f"\n  {'='*50}")
-    print(f"  自训练汇总 ({n_rounds} rounds, total {total_time:.1f}s):")
+    print(f"  Self-training summary ({n_rounds} rounds, total {total_time:.1f}s):")
     for rr in all_round_results:
         print(f"    Round {rr['round']}: RMSE={rr['rmse']:.4f}, MAE={rr['mae']:.4f}")
 
@@ -1529,7 +1529,7 @@ def run_self_training(args, data_cache):
     worst_round = max(all_round_results, key=lambda x: x['rmse'])
     delta_pct = (best_round['rmse'] - all_round_results[0]['rmse']) / all_round_results[0]['rmse'] * 100
 
-    print(f"    最佳: Round {best_round['round']} (RMSE={best_round['rmse']:.4f})")
+    print(f"    Best: Round {best_round['round']} (RMSE={best_round['rmse']:.4f})")
     print(f"    vs Round1: Δ{delta_pct:+.1f}%")
     print(f"  {'='*50}")
 
@@ -1547,7 +1547,7 @@ def run_self_training(args, data_cache):
 
 
 def run_pretrain_finetune(args, data_cache):
-    """合成数据预训练 + 真实数据微调"""
+    """Synthetic data pre-training + real data fine-tuning."""
     cfg = vars(args).copy()
     exp_name = cfg['exp_name']
     use_skip = not cfg['no_skip']
@@ -1570,9 +1570,9 @@ def run_pretrain_finetune(args, data_cache):
     device_str = 'cpu' if cfg['no_gpu'] else ('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"\n{'='*60}")
-    print(f"  合成数据预训练 + 微调: {exp_name}")
-    print(f"  合成样本: {n_synthetic}, 预训练epochs: {pretrain_epochs}")
-    print(f"  微调epochs: {epochs}, device={device_str}")
+    print(f"  Synthetic pre-training + fine-tuning: {exp_name}")
+    print(f"  Synthetic samples: {n_synthetic}, pretrain epochs: {pretrain_epochs}")
+    print(f"  Fine-tune epochs: {epochs}, device={device_str}")
     print(f"{'='*60}")
 
     device = torch.device(device_str)
@@ -1588,18 +1588,18 @@ def run_pretrain_finetune(args, data_cache):
     LON_MIN, LON_MAX = data_cache['LON_MIN'], data_cache['LON_MAX']
     LAT_MIN, LAT_MAX = data_cache['LAT_MIN'], data_cache['LAT_MAX']
 
-    # 构建网格
+    # Build grid
     (x_grid, y_grid, grid_x, grid_y, lon_grid_full, lat_grid_full,
      mask_blank, nx, ny) = build_grid(
         train_df, lon0, lat0, R, LON_MIN, LON_MAX, LAT_MIN, LAT_MAX)
-    print(f"  网格: {nx} x {ny}")
+    print(f"  Grid: {nx} x {ny}")
 
-    # 插值真实数据
+    # Interpolate real data
     F_grid, X_grid, Y_grid, Z_grid, F_min, F_max, normalize, denormalize = \
         rbf_interpolate(train_df, grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
                          interp_method=interp_method)
 
-    # 获取真实数据各分量范围（用于合成数据生成）
+    # Get component ranges from real data (for synthetic data generation)
     F_range = (train_df['F'].min(), train_df['F'].max())
     X_range = (train_df['X'].min(), train_df['X'].max())
     Y_range = (train_df['Y'].min(), train_df['Y'].max())
@@ -1608,9 +1608,9 @@ def run_pretrain_finetune(args, data_cache):
     target_size = (128, 128)
 
     # =====================================================================
-    # Phase 1: 生成合成数据 + 预训练
+    # Phase 1: Generate synthetic data + pre-train
     # =====================================================================
-    print(f"\n  [Phase 1] 生成 {n_synthetic} 张合成磁场图...")
+    print(f"\n  [Phase 1] Generating {n_synthetic} synthetic magnetic maps...")
     t0 = time.time()
     rng = np.random.RandomState(seed)
     synthetic_samples = []
@@ -1619,33 +1619,33 @@ def run_pretrain_finetune(args, data_cache):
             grid_x, grid_y, mask_blank, eps_mode, fixed_eps,
             F_range, X_range, Y_range, Z_range, rng)
         synthetic_samples.append((mc, target, fmin, fmax))
-    print(f"  生成完成, 用时 {time.time() - t0:.1f}s")
+    print(f"  Generation done in {time.time() - t0:.1f}s")
 
-    # 预训练模型
+    # Pre-train model
     model = UNetInpainter(in_chans=input_ch, base_ch=base_ch,
                            use_skip=use_skip).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  参数量: {n_params:,}")
+    print(f"  Parameters: {n_params:,}")
 
-    print(f"\n  [Phase 2] 预训练...")
+    print(f"\n  [Phase 2] Pre-training...")
     t1 = time.time()
     model = pretrain_on_synthetic(
         model, synthetic_samples, pretrain_epochs, batch_size,
         lr, max_lr, weight_decay, target_size, mask_mode, device)
     pretrain_time = time.time() - t1
-    print(f"  预训练完成, 用时 {pretrain_time:.1f}s")
+    print(f"  Pre-training done in {pretrain_time:.1f}s")
 
-    # 保存预训练权重
+    # Save pretrained weights
     pt_path = os.path.join(output_dir, f'{exp_name}_pretrained.pth')
     torch.save(model.state_dict(), pt_path)
-    print(f"  预训练权重保存至: {pt_path}")
+    print(f"  Pretrained weights saved to: {pt_path}")
 
     # =====================================================================
-    # Phase 2: 真实数据微调
+    # Phase 2: Fine-tune on real data
     # =====================================================================
-    print(f"\n  [Phase 3] 真实数据微调 ({epochs} epochs, 逐epoch记录RMSE)...")
+    print(f"\n  [Phase 3] Fine-tuning on real data ({epochs} epochs, log per epoch)...")
 
-    # 构建真实数据输入
+    # Build real data input
     X_grid_aux = X_grid.copy()
     Y_grid_aux = Y_grid.copy()
     Z_grid_aux = Z_grid.copy()
@@ -1665,7 +1665,7 @@ def run_pretrain_finetune(args, data_cache):
     def simple_denorm(x):
         return (x + 1) / 2 * (F_max - F_min) + F_min
 
-    # 自定义微调训练循环，逐epoch记录RMSE
+    # Custom fine-tune loop, log RMSE per epoch
     criterion = CompositeLoss(grad_weight=grad_weight).to(device)
     dataset = InpaintingDataset(train_image, permanent_mask_resized,
                                  mask_mode=mask_mode, mask_ratio=0.2)
@@ -1701,7 +1701,7 @@ def run_pretrain_finetune(args, data_cache):
 
         avg_loss = total_loss / steps_per_epoch
 
-        # 每个epoch评估RMSE
+        # Evaluate RMSE per epoch
         rmse_ep, mae_ep, _, _ = evaluate_model(
             model, multi_channel, permanent_mask_resized, target_size,
             F_grid, mask_blank, x_grid, y_grid, test_df, ll_to_xy,
@@ -1719,17 +1719,17 @@ def run_pretrain_finetune(args, data_cache):
 
     ft_time = time.time() - t2
 
-    # 加载最佳模型
+    # Load best model
     model.load_state_dict(best_state)
     rmse, mae = best_rmse, rmse_history[best_epoch - 1]['mae']
 
-    # 保存RMSE历史
+    # Save RMSE history
     rmse_json_path = os.path.join(output_dir, f'{exp_name}_rmse_history.json')
     with open(rmse_json_path, 'w') as f:
         json.dump(rmse_history, f, indent=2)
-    print(f"  RMSE历史保存至: {rmse_json_path}")
+    print(f"  RMSE history saved to: {rmse_json_path}")
 
-    # 绘制 RMSE vs Epoch 曲线
+    # Plot RMSE vs Epoch curve
     fig, ax = plt.subplots(figsize=(10, 6))
     epochs_list = [r['epoch'] for r in rmse_history]
     rmse_list = [r['rmse'] for r in rmse_history]
@@ -1749,19 +1749,19 @@ def run_pretrain_finetune(args, data_cache):
     plot_path = os.path.join(output_dir, f'{exp_name}_rmse_curve.png')
     fig.savefig(plot_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"  RMSE曲线图保存至: {plot_path}")
+    print(f"  RMSE curve saved to: {plot_path}")
 
     total_time = time.time() - t0
 
     print(f"\n  {'='*50}")
-    print(f"  预训练+微调 结果:")
-    print(f"    最佳微调 RMSE={rmse:.4f} (epoch {best_epoch}/{epochs})")
-    print(f"    预训练用时: {pretrain_time:.1f}s, 微调用时: {ft_time:.1f}s")
-    print(f"    总用时: {total_time:.1f}s")
+    print(f"  Pre-training + fine-tuning results:")
+    print(f"    Best fine-tune RMSE={rmse:.4f} (epoch {best_epoch}/{epochs})")
+    print(f"    Pretrain time: {pretrain_time:.1f}s, fine-tune time: {ft_time:.1f}s")
+    print(f"    Total time: {total_time:.1f}s")
     print(f"  {'='*50}")
 
-    # 同时跑对比实验：无预训练直接用同配置训练（用于公平比较）
-    print(f"\n  [对比] 无预训练直接训练...")
+    # Baseline: train from scratch with same config (fair comparison)
+    print(f"\n  [Baseline] Training from scratch...")
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -1786,8 +1786,8 @@ def run_pretrain_finetune(args, data_cache):
         simple_denorm, nx, ny, device)
 
     delta = rmse - rmse_scratch
-    print(f"    无预训练 RMSE={rmse_scratch:.4f}, MAE={mae_scratch:.4f}")
-    print(f"    预训练增益: ΔRMSE={delta:+.2f} ({(delta/rmse_scratch)*100:+.1f}%)")
+    print(f"    Scratch RMSE={rmse_scratch:.4f}, MAE={mae_scratch:.4f}")
+    print(f"    Pre-training gain: ΔRMSE={delta:+.2f} ({(delta/rmse_scratch)*100:+.1f}%)")
 
     result = {
         'exp_name': exp_name,
@@ -1813,7 +1813,7 @@ def run_pretrain_finetune(args, data_cache):
 
 
 def plot_ablation_results(results, output_dir):
-    """绘制消融实验 RMSE/MAE 对比柱状图"""
+    """Plot ablation experiment RMSE/MAE comparison bar chart."""
     names = [r['exp_name'] for r in results]
     rmse_vals = [r['rmse'] for r in results]
     mae_vals = [r['mae'] for r in results]
@@ -1849,7 +1849,7 @@ def plot_ablation_results(results, output_dir):
     fig_path = os.path.join(output_dir, 'ablation_comparison.png')
     plt.savefig(fig_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"  对比图已保存至: {fig_path}")
+    print(f"  Comparison chart saved to: {fig_path}")
 
 
 if __name__ == '__main__':

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""从保存的 .npy 文件重新生成所有图表 (无需重新训练)
+"""Regenerate all figures from saved .npy files (no retraining needed)
 =========================================================
-用法:
+Usage:
   python plot_from_saved.py
 
-从当前目录读取:
+Reads from current directory:
   - grid_x_{rect|irreg}.npy, grid_y_{rect|irreg}.npy
   - bx_{rect|irreg}.npy, by_{rect|irreg}.npy
   - mask_blank_{rect|irreg}.npy, mask_outside_{rect|irreg}.npy
@@ -12,7 +12,7 @@
   - result_grid_{rect|irreg}.npy
   - history_{rect|irreg}.json
 
-生成 (每张 PNG + SVG):
+Generates (PNG + SVG each):
   - fig_loss_{rect|irreg}
   - fig_rmse_{rect|irreg}
   - fig_truth_{rect|irreg}
@@ -49,12 +49,12 @@ def load_or_none(path):
 
 def main():
     print("=" * 60)
-    print("  从保存数据重新生成图表 (U-Net+Transformer)")
-    print(f"  数据目录: {SCRIPT_DIR}")
+    print("  Regenerate figures from saved data (U-Net+Transformer)")
+    print(f"  Data directory: {SCRIPT_DIR}")
     print("=" * 60)
 
     for region_key, region_label in REGIONS.items():
-        print(f"\n[{region_label}] 加载数据...")
+        print(f"\n[{region_label}] Loading data...")
 
         grid_x = load_or_none(os.path.join(SCRIPT_DIR, f'grid_x_{region_key}.npy'))
         grid_y = load_or_none(os.path.join(SCRIPT_DIR, f'grid_y_{region_key}.npy'))
@@ -66,17 +66,17 @@ def main():
         result_grid = load_or_none(os.path.join(SCRIPT_DIR, f'result_grid_{region_key}.npy'))
 
         if any(x is None for x in [grid_x, grid_y, bx, by, mask_blank, mask_outside, truth_grid, result_grid]):
-            print(f"  Warning: 缺少必要数据, 跳过 {region_key}")
+            print(f"  Warning: missing required data, skipping {region_key}")
             continue
 
-        # 加载训练历史
+        # Load training history
         history = None
         hist_path = os.path.join(SCRIPT_DIR, f'history_{region_key}.json')
         if os.path.exists(hist_path):
             with open(hist_path) as f:
                 history = json.load(f)
 
-        # 加载结果汇总 (获取 RMSE)
+        # Load results summary (for RMSE)
         rmse = None
         results_path = os.path.join(SCRIPT_DIR, 'results.json')
         if os.path.exists(results_path):
@@ -90,7 +90,7 @@ def main():
         vmin = np.nanmin(truth_grid[~mask_outside])
         vmax = np.nanmax(truth_grid[~mask_outside])
 
-        # ---- Loss 曲线 ----
+        # ---- Loss curve ----
         if history:
             fig1, ax1 = plt.subplots(figsize=(10, 5))
             ax1.plot([h['epoch'] for h in history], [h['loss'] for h in history],
@@ -100,7 +100,7 @@ def main():
             ax1.grid(True, alpha=0.3)
             save_fig(fig1, f'fig_loss_{region_key}')
 
-        # ---- RMSE 曲线 ----
+        # ---- RMSE curve ----
         if history:
             fig2, ax2 = plt.subplots(figsize=(10, 5))
             eps = [h['epoch'] for h in history]
@@ -115,7 +115,7 @@ def main():
             ax2.grid(True, alpha=0.3)
             save_fig(fig2, f'fig_rmse_{region_key}')
 
-        # ---- 真值图 ----
+        # ---- Ground truth map ----
         fig3, ax3 = plt.subplots(figsize=(10, 9))
         im = ax3.pcolormesh(grid_x, grid_y, truth_grid, cmap='jet', shading='auto',
                            vmin=vmin, vmax=vmax)
@@ -179,11 +179,11 @@ def main():
         cbar.formatter.set_powerlimits((0, 0)); cbar.update_ticks()
         save_fig(fig6, f'fig_error_{region_key}')
 
-        print(f"  [{region_label}] 完成 (6 figures)")
+        print(f"  [{region_label}] Done (6 figures)")
 
     print(f"\n{'='*60}")
-    print("  所有图表已重新生成!")
-    print(f"  输出: {SCRIPT_DIR}/")
+    print("  All figures regenerated!")
+    print(f"  Output: {SCRIPT_DIR}/")
     print("=" * 60)
 
 

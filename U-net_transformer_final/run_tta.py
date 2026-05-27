@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""TTA (Test-Time Augmentation) 评估
+"""TTA (Test-Time Augmentation) evaluation
 ======================================
-加载已训练好的 U-Net+Transformer 模型, 用多次随机 mask 推理取平均
+Load trained U-Net+Transformer model, average over multiple random mask inferences
 """
 
 import sys, importlib.util, os, json, warnings
@@ -27,10 +27,10 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 TARGET_SIZE = (128, 128)
 SEED = 42
 N_INTERP_CTRL = 3000
-TTA_TIMES = 20  # 随机 mask 次数
+TTA_TIMES = 20  # number of random mask iterations
 
-# Transformer 模块 (与训练时完全一致)
-# Transformer 模块 (与 run_final.py 完全一致)
+# Transformer module (identical to training)
+# Transformer module (identical to run_final.py)
 class PositionalEncoding(nn.Module):
     def __init__(self, num_patches, dim):
         super().__init__()
@@ -96,7 +96,7 @@ class UNetTransformer(nn.Module):
         x = self.up1(x5); x = self.up2(x); x = self.up3(x); x = self.up4(x)
         return self.outc(x)
 
-# 数据加载 (复用)
+# Data loading (reused)
 def load_region_data(poly_vertices=None, rect_bounds=None):
     df_full = pd.read_csv(DATA_PATH)
     df = df_full.iloc[::3].copy().reset_index(drop=True)
@@ -185,7 +185,7 @@ def preprocess(data):
             'test_xy': test_xy, 'yt_all': yt_all, 'denorm': denorm, 'eps': eps}
 
 def gen_random_block_mask(valid_region, H, W):
-    """生成随机 block mask (与训练时逻辑一致)"""
+    """Generate random block mask (same logic as training)"""
     max_h = min(int(H * 0.4), 48)
     min_h = max(int(H * 0.1), 8)
     max_w = min(int(W * 0.4), 48)
@@ -203,35 +203,35 @@ def gen_random_block_mask(valid_region, H, W):
     return None
 
 print("=" * 60)
-print(f"  TTA 评估 (n={TTA_TIMES})")
-print(f"  模型目录: {MODEL_DIR}")
+print(f"  TTA evaluation (n={TTA_TIMES})")
+print(f"  Model directory: {MODEL_DIR}")
 print("=" * 60)
 
 REGIONS = {
-    'rect': ('矩形', None, (62.0, 63.0, 32.5, 33.5)),
-    'irreg': ('不规则', np.array([[62.05,32.65],[62.30,32.38],[62.70,32.42],[62.95,32.75],
+    'rect': ('Rectangular', None, (62.0, 63.0, 32.5, 33.5)),
+    'irreg': ('Irregular', np.array([[62.05,32.65],[62.30,32.38],[62.70,32.42],[62.95,32.75],
                                    [63.08,33.05],[62.88,33.38],[62.48,33.48],[62.15,33.22],[61.98,32.92]]), None),
 }
 
 for rk, (rlabel, poly, rect) in REGIONS.items():
     model_path = os.path.join(MODEL_DIR, f'best_model_{rk}.pt')
     if not os.path.exists(model_path):
-        print(f"\n  [{rlabel}] 模型不存在, 跳过")
+        print(f"\n  [{rlabel}] Model not found, skipping")
         continue
 
-    print(f"\n{'='*50}\n  [{rlabel}] TTA 评估\n{'='*50}")
+    print(f"\n{'='*50}\n  [{rlabel}] TTA evaluation\n{'='*50}")
 
     data = load_region_data(poly_vertices=poly, rect_bounds=rect)
     prep = preprocess(data)
-    print(f"  eps={prep['eps']:.4f}, 训练点: {len(data['train_df']):,}, 测试点: {len(data['test_df']):,}")
+    print(f"  eps={prep['eps']:.4f}, Train: {len(data['train_df']):,}, Test: {len(data['test_df']):,}")
 
     model = UNetTransformer(in_chans=1, base_ch=48, use_skip=False).to(DEVICE)
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.eval()
-    print(f"  模型已加载: {model_path}")
+    print(f"  Model loaded: {model_path}")
 
     # ========================
-    # 1) 标准推理 (无 TTA, 原始输入)
+    # 1) Standard inference (no TTA, original input)
     # ========================
     base_input = torch.tensor(np.stack([prep['F_resized']], 0).astype(np.float32)).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
@@ -250,10 +250,10 @@ for rk, (rlabel, poly, rect) in REGIONS.items():
     valid = ~np.isnan(pred_std)
     rmse_std = np.sqrt(mean_squared_error(prep['yt_all'][valid], pred_std[valid])) if np.sum(valid) > 10 else float('nan')
     mae_std = mean_absolute_error(prep['yt_all'][valid], pred_std[valid]) if np.sum(valid) > 10 else float('nan')
-    print(f"  标准推理:        RMSE={rmse_std:.2f}, MAE={mae_std:.2f}")
+    print(f"  Standard inference: RMSE={rmse_std:.2f}, MAE={mae_std:.2f}")
 
     # ========================
-    # 2) TTA 推理 (多次随机 mask + 平均)
+    # 2) TTA inference (multiple random masks + average)
     # ========================
     valid_region = ~torch.tensor(prep['perm_mask'], dtype=torch.bool)
     H, W = TARGET_SIZE
@@ -277,7 +277,7 @@ for rk, (rlabel, poly, rect) in REGIONS.items():
         out_np = prep['denorm'](out_np)
         outputs_tta.append(out_np)
 
-        # 每个 TTA 单独评估
+        # Evaluate each TTA individually
         out_full = zoom(out_np, zf, order=1)[:data['nx'], :data['ny']]
         bo = out_full.copy(); bo[~data['mask_blank']] = np.nan
         bo = gaussian_filter1d(bo, 1.5, axis=0); bo = gaussian_filter1d(bo, 1.5, axis=1)
@@ -294,7 +294,7 @@ for rk, (rlabel, poly, rect) in REGIONS.items():
     torch.cuda.synchronize()
     tta_time = t0.elapsed_time(t1) / 1000
 
-    # TTA 平均
+    # TTA average
     out_mean = np.mean(outputs_tta, axis=0)
     out_mean_full = zoom(out_mean, zf, order=1)[:data['nx'], :data['ny']]
     bo = out_mean_full.copy(); bo[~data['mask_blank']] = np.nan
@@ -309,14 +309,14 @@ for rk, (rlabel, poly, rect) in REGIONS.items():
     mae_tta = mean_absolute_error(prep['yt_all'][valid_tta], pred_tta[valid_tta]) if np.sum(valid_tta) > 10 else float('nan')
 
     print(f"  TTA ({TTA_TIMES}x): RMSE={rmse_tta:.2f}, MAE={mae_tta:.2f}")
-    print(f"  TTA 单次 RMSE 范围: {min(tta_rmses):.1f} ~ {max(tta_rmses):.1f}, mean={np.mean(tta_rmses):.1f}")
-    print(f"  TTA 提升: RMSE {rmse_std - rmse_tta:+.2f} nT ({(rmse_std - rmse_tta)/rmse_std*100:+.1f}%)")
-    print(f"  TTA 耗时: {tta_time:.1f}s")
+    print(f"  TTA per-run RMSE range: {min(tta_rmses):.1f} ~ {max(tta_rmses):.1f}, mean={np.mean(tta_rmses):.1f}")
+    print(f"  TTA improvement: RMSE {rmse_std - rmse_tta:+.2f} nT ({(rmse_std - rmse_tta)/rmse_std*100:+.1f}%)")
+    print(f"  TTA time: {tta_time:.1f}s")
 
-    # 保存 TTA 结果网格
+    # Save TTA result grid
     np.save(os.path.join(MODEL_DIR, f'result_grid_{rk}_tta.npy'), rg_tta)
-    print(f"  TTA 结果网格已保存: result_grid_{rk}_tta.npy")
+    print(f"  TTA result grid saved: result_grid_{rk}_tta.npy")
 
 print(f"\n{'='*60}")
-print("  TTA 评估完成!")
+print("  TTA evaluation done!")
 print("=" * 60)

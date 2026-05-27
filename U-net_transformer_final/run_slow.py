@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""U-Net + Transformer 慢收敛版本实验
+"""U-Net + Transformer slow convergence experiment
 =============================================
-参数调整: max_lr=5e-4, pct_start=0.3, epochs=150, wd=1e-5
-目的: 更稳定、更慢的收敛, 减少随机波动
+Parameter adjustments: max_lr=5e-4, pct_start=0.3, epochs=150, wd=1e-5
+Goal: more stable, slower convergence to reduce random fluctuations
 """
 
 import sys, importlib.util, os, time, json, warnings
@@ -30,7 +30,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # =============================================================================
-# 配置 (慢收敛版)
+# Configuration (slow convergence)
 # =============================================================================
 DATA_PATH = r'F:\PINN实验\venv\U-net\afghanistan_full\Afghan_mag06A.csv'
 OUT_DIR   = r'F:\PINN实验\venv\U-net\U-net_transformer_slow'
@@ -44,10 +44,10 @@ BASE_CH = 48
 SEED = 42
 N_INTERP_CTRL = 3000
 
-# 慢收敛参数
-MAX_LR = 5e-4          # 原 1e-3 → 5e-4 (减半)
-PCT_START = 0.3        # 原 0.1 → 0.3 (warmup 延长到 30% epochs)
-WEIGHT_DECAY = 1e-5    # 原 1e-6 → 1e-5
+# Slow convergence parameters
+MAX_LR = 5e-4          # was 1e-3, halved to 5e-4
+PCT_START = 0.3        # was 0.1, warmup extended to 30% epochs
+WEIGHT_DECAY = 1e-5    # was 1e-6, increased to 1e-5
 
 USE_SKIP = False
 GRAD_WEIGHT = 0.0
@@ -67,13 +67,13 @@ IRREGULAR_POLYGON = np.array([
 ])
 
 print("=" * 60)
-print("  U-Net + Transformer 慢收敛实验")
+print("  U-Net + Transformer slow convergence experiment")
 print(f"  max_lr={MAX_LR}, pct_start={PCT_START}, epochs={EPOCHS}, wd={WEIGHT_DECAY}")
-print(f"  矩形 + 不规则空白区")
+print(f"  Rectangular + irregular blank regions")
 print("=" * 60)
 
 # =============================================================================
-# Transformer 模块
+# Transformer module
 # =============================================================================
 
 class PositionalEncoding(nn.Module):
@@ -143,7 +143,7 @@ class UNetTransformer(nn.Module):
         return self.outc(x)
 
 # =============================================================================
-# 数据加载
+# Data loading
 # =============================================================================
 
 def load_region_data(poly_vertices=None, rect_bounds=None):
@@ -204,7 +204,7 @@ def load_region_data(poly_vertices=None, rect_bounds=None):
             'bx': bx, 'by': by}
 
 # =============================================================================
-# RBF 预处理
+# RBF preprocessing
 # =============================================================================
 
 def rbf_preprocess(data):
@@ -241,18 +241,18 @@ def rbf_preprocess(data):
             'normalize': normalize, 'denorm': denorm, 'eps': eps}
 
 # =============================================================================
-# 训练
+# Training
 # =============================================================================
 
 def train_model(data, prep, region_key, region_label):
-    print(f"\n[训练] U-Net+Transformer [{region_label}], epochs={EPOCHS}, lr={MAX_LR}, pct={PCT_START}")
+    print(f"\n[Train] U-Net+Transformer [{region_label}], epochs={EPOCHS}, lr={MAX_LR}, pct={PCT_START}")
 
     np.random.seed(SEED); torch.manual_seed(SEED)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(SEED)
 
     model = UNetTransformer(in_chans=1, base_ch=BASE_CH, use_skip=USE_SKIP).to(DEVICE)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  参数量: {n_params:,}")
+    print(f"  Params: {n_params:,}")
 
     criterion = unet.CompositeLoss(grad_weight=GRAD_WEIGHT).to(DEVICE)
     train_image = np.stack([prep['F_resized']], axis=0).astype(np.float32)
@@ -319,7 +319,7 @@ def train_model(data, prep, region_key, region_label):
     train_time = time.time() - t0
     model.load_state_dict(best_state)
 
-    # 保存
+    # Save
     torch.save(best_state, os.path.join(OUT_DIR, f'best_model_{region_key}.pt'))
     np.save(os.path.join(OUT_DIR, f'result_grid_{region_key}.npy'), best_result_grid)
     with open(os.path.join(OUT_DIR, f'history_{region_key}.json'), 'w') as f:
@@ -334,7 +334,7 @@ def train_model(data, prep, region_key, region_label):
 
 
 # =============================================================================
-# 绘图
+# Plotting
 # =============================================================================
 
 def save_fig(fig, name):
@@ -354,7 +354,7 @@ def plot_figures(data, prep, result, region_key, region_label):
     zx = (bx.min() - 2, bx.max() + 2)
     zy = (by.min() - 2, by.max() + 2)
 
-    # 真值网格 (用于残差/误差图)
+    # Ground truth grid (for residual/error maps)
     n_ctrl = 3000
     df_all = pd.read_csv(DATA_PATH).iloc[::3]
     df_truth = df_all.iloc[::max(1, len(df_all)//n_ctrl)].copy()
@@ -440,12 +440,12 @@ def plot_figures(data, prep, result, region_key, region_label):
 
 
 # =============================================================================
-# 运行
+# Run
 # =============================================================================
 
 regions = {
-    'rect':  ('矩形', None, (RECT_LON_MIN, RECT_LON_MAX, RECT_LAT_MIN, RECT_LAT_MAX)),
-    'irreg': ('不规则', IRREGULAR_POLYGON, None),
+    'rect':  ('Rectangular', None, (RECT_LON_MIN, RECT_LON_MAX, RECT_LAT_MIN, RECT_LAT_MAX)),
+    'irreg': ('Irregular', IRREGULAR_POLYGON, None),
 }
 
 run_start = time.time()
@@ -453,14 +453,14 @@ summary = {}
 
 for rk, (rlabel, poly, rect) in regions.items():
     print(f"\n{'#'*60}")
-    print(f"# 区域: {rlabel}")
+    print(f"# Region: {rlabel}")
     print(f"{'#'*60}")
 
     data = load_region_data(poly_vertices=poly, rect_bounds=rect)
     prep = rbf_preprocess(data)
-    print(f"  eps={prep['eps']:.4f}, 训练点: {len(data['train_df']):,}, 测试点: {len(data['test_df']):,}")
+    print(f"  eps={prep['eps']:.4f}, Train: {len(data['train_df']):,}, Test: {len(data['test_df']):,}")
 
-    # 保存共享数据
+    # Save shared data
     np.save(os.path.join(OUT_DIR, f'mask_blank_{rk}.npy'), data['mask_blank'])
     np.save(os.path.join(OUT_DIR, f'mask_outside_{rk}.npy'), data['mask_outside'])
     np.save(os.path.join(OUT_DIR, f'grid_x_{rk}.npy'), data['grid_x'])
@@ -471,12 +471,12 @@ for rk, (rlabel, poly, rect) in regions.items():
     result = train_model(data, prep, rk, rlabel)
     plot_figures(data, prep, result, rk, rlabel)
 
-# 汇总
+# Summary
 print(f"\n{'='*60}")
-print(f"  慢收敛实验汇总")
+print(f"  Slow convergence experiment summary")
 print(f"  max_lr={MAX_LR}, pct_start={PCT_START}, epochs={EPOCHS}")
 print(f"{'='*60}")
-print(f"  {'区域':<8s} {'RMSE':>8s} {'MAE':>8s} {'Epoch':>8s} {'Time':>8s}")
+print(f"  {'Region':<8s} {'RMSE':>8s} {'MAE':>8s} {'Epoch':>8s} {'Time':>8s}")
 for rk, (rlabel, _, _) in regions.items():
     h = json.load(open(os.path.join(OUT_DIR, f'history_{rk}.json')))
     best = min(h, key=lambda x: x['rmse'])
@@ -491,5 +491,5 @@ summary['total_time_min'] = round(total_time / 60, 1)
 with open(os.path.join(OUT_DIR, 'results.json'), 'w') as f:
     json.dump(summary, f, indent=2, ensure_ascii=False)
 
-print(f"\n  总耗时: {(time.time()-run_start)/60:.0f} min")
+print(f"\n  Total time: {(time.time()-run_start)/60:.0f} min")
 print("=" * 60)

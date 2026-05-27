@@ -1,26 +1,26 @@
 #!/usr/bin/env python
-"""U-Net + Transformer 最终实验 — 双区域填补
+"""U-Net + Transformer final experiment — dual-region inpainting
 ====================================================
-矩形 + 不规则空白区, 100 epochs, 按 RMSE 选最佳模型
-Pure U-Net vs U-Net+Transformer (block-only mask, 无skip, 无梯度损失)
+Rectangular + irregular blank regions, 100 epochs, best model by RMSE
+Pure U-Net vs U-Net+Transformer (block-only mask, no skip, no gradient loss)
 
-保存:
-  - best_model_{rect|irreg}_{unet|tf}.pt    模型权重
-  - result_grid_{rect|irreg}_{unet|tf}.npy   最佳结果网格
-  - truth_grid_{rect|irreg}.npy              真值网格(RBF)
-  - mask_blank_{rect|irreg}.npy              空白区掩膜
-  - grid_x_{rect|irreg}.npy, grid_y_{rect|irreg}.npy  网格坐标
-  - bx_{rect|irreg}.npy, by_{rect|irreg}.npy           边界坐标
-  - history_{rect|irreg}_{unet|tf}.json      训练历史
-  - results.json                             汇总结果
+Saves:
+  - best_model_{rect|irreg}_{unet|tf}.pt    model weights
+  - result_grid_{rect|irreg}_{unet|tf}.npy   best result grid
+  - truth_grid_{rect|irreg}.npy              ground truth grid (RBF)
+  - mask_blank_{rect|irreg}.npy              blank region mask
+  - grid_x_{rect|irreg}.npy, grid_y_{rect|irreg}.npy  grid coordinates
+  - bx_{rect|irreg}.npy, by_{rect|irreg}.npy           boundary coordinates
+  - history_{rect|irreg}_{unet|tf}.json      training history
+  - results.json                             summary results
 
-绘图 (每张单独 PNG+SVG):
-  - fig_loss_{rect|irreg}.png/svg            Loss 曲线
-  - fig_rmse_{rect|irreg}.png/svg            RMSE 曲线
-  - fig_result_{rect|irreg}_{unet|tf}.png/svg 填补结果图
-  - fig_residual_{rect|irreg}_{unet|tf}.png/svg 残差图 (pred-true, RdBu)
-  - fig_error_{rect|irreg}_{unet|tf}.png/svg   绝对误差图 (|pred-true|, hot)
-  - fig_truth_{rect|irreg}.png/svg           真值图
+Plots (separate PNG+SVG each):
+  - fig_loss_{rect|irreg}.png/svg            Loss curve
+  - fig_rmse_{rect|irreg}.png/svg            RMSE curve
+  - fig_result_{rect|irreg}_{unet|tf}.png/svg  inpainting result
+  - fig_residual_{rect|irreg}_{unet|tf}.png/svg  residual map (pred-true, RdBu)
+  - fig_error_{rect|irreg}_{unet|tf}.png/svg   absolute error map (|pred-true|, hot)
+  - fig_truth_{rect|irreg}.png/svg           ground truth map
 """
 
 import sys, importlib.util, os, time, json, warnings
@@ -48,7 +48,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # =============================================================================
-# 0. 配置
+# 0. Configuration
 # =============================================================================
 DATA_PATH = r'F:\PINN实验\venv\U-net\afghanistan_full\Afghan_mag06A.csv'
 OUT_DIR   = r'F:\PINN实验\venv\U-net\U-net_transformer_final'
@@ -80,14 +80,14 @@ IRREGULAR_POLYGON = np.array([
 ])
 
 print("=" * 60)
-print("  U-Net + Transformer 最终实验 — 双区域填补")
-print(f"  矩形 + 不规则空白区, {EPOCHS} epochs, 按 RMSE 选最佳")
-print(f"  Block-only mask, 无跳跃连接, 无梯度损失")
-print(f"  输出: {OUT_DIR}/")
+print("  U-Net + Transformer final experiment — dual-region inpainting")
+print(f"  Rectangular + irregular blank regions, {EPOCHS} epochs, best by RMSE")
+print(f"  Block-only mask, no skip connections, no gradient loss")
+print(f"  Output: {OUT_DIR}/")
 print("=" * 60)
 
 # =============================================================================
-# 1. Transformer 模块
+# 1. Transformer module
 # =============================================================================
 
 class PositionalEncoding(nn.Module):
@@ -157,7 +157,7 @@ class UNetTransformer(nn.Module):
         return self.outc(x)
 
 # =============================================================================
-# 2. 数据加载
+# 2. Data loading
 # =============================================================================
 
 def load_region_data(poly_vertices=None, rect_bounds=None):
@@ -231,7 +231,7 @@ def load_region_data(poly_vertices=None, rect_bounds=None):
     }
 
 # =============================================================================
-# 3. RBF 预处理
+# 3. RBF preprocessing
 # =============================================================================
 
 def rbf_preprocess(data):
@@ -239,7 +239,7 @@ def rbf_preprocess(data):
     points_xy = train_df[['x', 'y']].values
     values_F = train_df['FinalMag'].values
 
-    # 真值网格 (thin_plate_spline, 无空白区, 用于评估和绘图)
+    # Ground truth grid (thin_plate_spline, no blank region, for evaluation & plotting)
     n_ctrl = 3000
     df_all = pd.read_csv(DATA_PATH).iloc[::3]
     df_truth = df_all.iloc[::max(1, len(df_all)//n_ctrl)].copy()
@@ -251,7 +251,7 @@ def rbf_preprocess(data):
     truth_grid = gaussian_filter1d(truth_grid, 1.0, axis=1)
     truth_grid[data['mask_outside']] = np.nan
 
-    # RBF 插值作为背景场
+    # RBF interpolation as background field
     n_sub = min(N_INTERP_CTRL, len(points_xy))
     idx = np.random.choice(len(points_xy), n_sub, replace=False)
     pts_sub, val_sub = points_xy[idx], values_F[idx]
@@ -291,7 +291,7 @@ def rbf_preprocess(data):
     }
 
 # =============================================================================
-# 4. 训练函数
+# 4. Training function
 # =============================================================================
 
 def train_and_eval(model, data, prep, region_key, model_key, label):
@@ -302,7 +302,7 @@ def train_and_eval(model, data, prep, region_key, model_key, label):
 
     model = model.to(DEVICE)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  参数量: {n_params:,}")
+    print(f"  Params: {n_params:,}")
 
     criterion = unet.CompositeLoss(grad_weight=GRAD_WEIGHT).to(DEVICE)
     train_image = np.stack([prep['F_resized']], axis=0).astype(np.float32)
@@ -373,12 +373,12 @@ def train_and_eval(model, data, prep, region_key, model_key, label):
     model.load_state_dict(best_state_rmse)
     train_time = time.time() - t0
 
-    # 保存模型权重
+    # Save model weights
     model_path = os.path.join(OUT_DIR, f'best_model_{region_key}.pt')
     torch.save(best_state_rmse, model_path)
-    print(f"  模型已保存: {model_path}")
+    print(f"  Model saved: {model_path}")
 
-    # 保存结果网格
+    # Save result grid
     np.save(os.path.join(OUT_DIR, f'result_grid_{region_key}.npy'), best_result_grid)
 
     print(f"  Final (Best-RMSE): epoch={best_epoch}, RMSE={best_rmse:.2f}, MAE={history[best_epoch-1]['mae']:.2f} | Time: {train_time:.0f}s")
@@ -391,7 +391,7 @@ def train_and_eval(model, data, prep, region_key, model_key, label):
 
 
 # =============================================================================
-# 5. 绘图函数
+# 5. Plotting functions
 # =============================================================================
 
 def save_fig(fig, name):
@@ -401,7 +401,7 @@ def save_fig(fig, name):
     plt.close(fig)
 
 def plot_all_figures(data, prep, result, region_key, region_label):
-    """为一个区域生成所有图表 (仅 U-Net+Transformer)"""
+    """Generate all figures for one region (U-Net+Transformer only)"""
     mask_blank = data['mask_blank']
     mask_outside = data['mask_outside']
     bx, by = data['bx'], data['by']
@@ -416,9 +416,9 @@ def plot_all_figures(data, prep, result, region_key, region_label):
     vmin = np.nanmin(truth_grid[~mask_outside])
     vmax = np.nanmax(truth_grid[~mask_outside])
 
-    print(f"\n  [{region_label}] 生成图表...")
+    print(f"\n  [{region_label}] Generating figures...")
 
-    # ---- Fig 1: Loss 曲线 ----
+    # ---- Fig 1: Loss curve ----
     fig1, ax1 = plt.subplots(figsize=(10, 5))
     ax1.plot([h['epoch'] for h in history], [h['loss'] for h in history],
              color='#FF5722', lw=2)
@@ -427,7 +427,7 @@ def plot_all_figures(data, prep, result, region_key, region_label):
     ax1.grid(True, alpha=0.3)
     save_fig(fig1, f'fig_loss_{region_key}')
 
-    # ---- Fig 2: RMSE 曲线 ----
+    # ---- Fig 2: RMSE curve ----
     fig2, ax2 = plt.subplots(figsize=(10, 5))
     eps = [h['epoch'] for h in history]
     rmses = [h['rmse'] for h in history]
@@ -439,7 +439,7 @@ def plot_all_figures(data, prep, result, region_key, region_label):
     ax2.grid(True, alpha=0.3)
     save_fig(fig2, f'fig_rmse_{region_key}')
 
-    # ---- Fig 3: 真值图 ----
+    # ---- Fig 3: Ground truth map ----
     fig3, ax3 = plt.subplots(figsize=(10, 9))
     im = ax3.pcolormesh(grid_x, grid_y, truth_grid, cmap='jet', shading='auto', vmin=vmin, vmax=vmax)
     ax3.plot(bx, by, 'k-', linewidth=2)
@@ -495,17 +495,17 @@ def plot_all_figures(data, prep, result, region_key, region_label):
     save_fig(fig6, f'fig_error_{region_key}')
 
     plt.close('all')
-    print(f"  [{region_label}] 图表已生成 (6 figures)")
+    print(f"  [{region_label}] Figures done (6 figures)")
 
 
 # =============================================================================
-# 6. 运行实验
+# 6. Run experiment
 # =============================================================================
 
 regions = {
-    'rect':  {'type': '矩形', 'poly': None,
+    'rect':  {'type': 'Rectangular', 'poly': None,
               'rect_bounds': (RECT_LON_MIN, RECT_LON_MAX, RECT_LAT_MIN, RECT_LAT_MAX)},
-    'irreg': {'type': '不规则', 'poly': IRREGULAR_POLYGON, 'rect_bounds': None},
+    'irreg': {'type': 'Irregular', 'poly': IRREGULAR_POLYGON, 'rect_bounds': None},
 }
 
 all_results = {}
@@ -513,16 +513,16 @@ run_start = time.time()
 
 for region_key, rcfg in regions.items():
     print(f"\n{'#'*60}")
-    print(f"# 区域: {rcfg['type']}空白区")
+    print(f"# Region: {rcfg['type']} blank")
     print(f"{'#'*60}")
 
-    print("\n[1/3] 加载数据 + RBF 预处理...")
+    print("\n[1/3] Loading data + RBF preprocessing...")
     data = load_region_data(poly_vertices=rcfg['poly'], rect_bounds=rcfg['rect_bounds'])
     prep = rbf_preprocess(data)
-    print(f"  eps={prep['eps']:.4f}, F范围: {prep['F_min']:.1f}~{prep['F_max']:.1f}")
-    print(f"  训练点: {len(data['train_df']):,}, 测试点: {len(data['test_df']):,}")
+    print(f"  eps={prep['eps']:.4f}, F range: {prep['F_min']:.1f}~{prep['F_max']:.1f}")
+    print(f"  Train points: {len(data['train_df']):,}, Test points: {len(data['test_df']):,}")
 
-    # 保存共享数据
+    # Save shared data
     np.save(os.path.join(OUT_DIR, f'truth_grid_{region_key}.npy'), prep['truth_grid'])
     np.save(os.path.join(OUT_DIR, f'mask_blank_{region_key}.npy'), data['mask_blank'])
     np.save(os.path.join(OUT_DIR, f'mask_outside_{region_key}.npy'), data['mask_outside'])
@@ -530,43 +530,43 @@ for region_key, rcfg in regions.items():
     np.save(os.path.join(OUT_DIR, f'grid_y_{region_key}.npy'), data['grid_y'])
     np.save(os.path.join(OUT_DIR, f'bx_{region_key}.npy'), data['bx'])
     np.save(os.path.join(OUT_DIR, f'by_{region_key}.npy'), data['by'])
-    print(f"  共享数组已保存")
+    print(f"  Shared arrays saved")
 
-    print(f"\n[2/2] 训练 U-Net + Transformer (100 epochs)...")
+    print(f"\n[2/2] Training U-Net + Transformer (100 epochs)...")
     model_tf = UNetTransformer(in_chans=1, base_ch=BASE_CH, use_skip=USE_SKIP)
     res_tf = train_and_eval(model_tf, data, prep, region_key, 'tf',
                             f"U-Net + Transformer [{rcfg['type']}]")
 
     all_results[region_key] = {'tf': res_tf}
 
-    # 保存训练历史
+    # Save training history
     hist_path = os.path.join(OUT_DIR, f'history_{region_key}.json')
     with open(hist_path, 'w') as f:
         json.dump(res_tf['history'], f, indent=2)
 
-    # 打印区域结果
-    print(f"\n  {rcfg['type']}区域结果:")
-    print(f"  {'模型':<30s} {'RMSE':>8s} {'MAE':>8s} {'最佳Epoch':>10s}  {'参数量':>10s}")
+    # Print region results
+    print(f"\n  {rcfg['type']} region results:")
+    print(f"  {'Model':<30s} {'RMSE':>8s} {'MAE':>8s} {'Best Epoch':>10s}  {'Params':>10s}")
     print(f"  {'-'*70}")
     print(f"  {'U-Net+Transformer':<30s} {res_tf['rmse']:8.2f} {res_tf['mae']:8.2f} {res_tf['best_epoch']:>10d}  {res_tf['n_params']:>10,}")
 
-    # 绘图
+    # Plot
     plot_all_figures(data, prep, res_tf, region_key, rcfg['type'])
 
 # =============================================================================
-# 7. 汇总
+# 7. Summary
 # =============================================================================
 
 print(f"\n{'='*60}")
-print(f"  最终汇总 (Best-RMSE)")
+print(f"  Final summary (Best-RMSE)")
 print(f"{'='*60}")
-print(f"  {'区域':<8s} {'RMSE':>8s} {'MAE':>8s} {'Epoch':>8s} {'Time':>8s}")
+print(f"  {'Region':<8s} {'RMSE':>8s} {'MAE':>8s} {'Epoch':>8s} {'Time':>8s}")
 print(f"  {'-'*48}")
-for rk, rlabel in [('rect', '矩形'), ('irreg', '不规则')]:
+for rk, rlabel in [('rect', 'Rectangular'), ('irreg', 'Irregular')]:
     r = all_results[rk]['tf']
     print(f"  {rlabel:<8s} {r['rmse']:8.2f} {r['mae']:8.2f} {r['best_epoch']:>8d} {r['train_time']:>7.0f}s")
 
-# 保存汇总 JSON
+# Save summary JSON
 summary = {}
 for rk in all_results:
     r = all_results[rk]['tf']
@@ -579,8 +579,8 @@ with open(os.path.join(OUT_DIR, 'results.json'), 'w') as f:
     json.dump(summary, f, indent=2, ensure_ascii=False)
 
 total_time = time.time() - run_start
-print(f"\n  总耗时: {total_time/60:.0f} min")
-print(f"  全部输出: {OUT_DIR}/")
+print(f"\n  Total time: {total_time/60:.0f} min")
+print(f"  All output: {OUT_DIR}/")
 print("=" * 60)
-print("  U-Net + Transformer 最终实验完成!")
+print("  U-Net + Transformer final experiment done!")
 print("=" * 60)
